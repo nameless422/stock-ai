@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日选股推荐</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1a1a2e; color: #eee; padding: 16px; }
+        h1 { text-align: center; margin: 16px 0; color: #e94560; font-size: 20px; }
+        h2 { font-size: 14px; margin: 16px 0 10px; color: #888; display: flex; align-items: center; gap: 8px; }
+        .header { background: #16213e; padding: 14px; border-radius: 12px; margin-bottom: 14px; }
+        .btn { background: #e94560; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn:disabled { background: #666; }
+        .btn-green { background: #26de81; color: #1a1a2e; }
+        .btn-small { padding: 5px 10px; font-size: 12px; }
+        .btn-back { background: #0f3460; color: #fff; }
+        
+        .progress-bar { background: #16213e; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: none; }
+        .progress-text { font-size: 13px; color: #888; }
+        .stock-count { color: #26de81; font-weight: bold; }
+        .progress-inner { height: 6px; background: #0f3460; border-radius: 3px; margin-top: 6px; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #e94560, #ff6b8a); border-radius: 3px; width: 0%; transition: width 0.5s; }
+        
+        .card { background: #16213e; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+        .card-title { font-weight: bold; font-size: 15px; margin-bottom: 6px; }
+        .card-meta { color: #888; font-size: 12px; }
+        .card-badge { display: inline-block; background: #26de81; color: #1a1a2e; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; margin-left: 6px; }
+        
+        .task-header { background: #0f3460; border-radius: 8px; padding: 10px 14px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .task-header:hover { background: #1a3a6a; }
+        .task-time { font-size: 14px; }
+        .task-badge { background: #e94560; color: #fff; padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+        
+        .stock-item { background: #16213e; border-radius: 8px; padding: 12px 14px; margin-bottom: 6px; }
+        .stock-item:hover { background: #1a2744; cursor: pointer; }
+        .stock-name { font-weight: bold; font-size: 15px; }
+        .stock-code { color: #888; font-size: 11px; margin-left: 6px; }
+        .stock-tags { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+        .tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; background: #0f3460; color: #26de81; }
+        .stock-vol { font-size: 11px; color: #888; margin-top: 4px; }
+        .live-tag { background: #e94560; color: #fff; padding: 2px 5px; border-radius: 3px; font-size: 9px; margin-left: 6px; animation: pulse 1s infinite; }
+        .buy-btn { background: #26de81; color: #1a1a2e; border: none; padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: bold; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .empty { text-align: center; padding: 24px; color: #666; font-size: 13px; }
+        .stock-count-badge { background: #26de81; color: #1a1a2e; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+        .back-btn { display: inline-block; padding: 5px 10px; background: #0f3460; border-radius: 6px; color: #fff; font-size: 12px; cursor: pointer; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>📈 每日选股推荐</h1>
+    
+    <div class="header">
+        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">筛选条件: 日线 MACD零轴上+成交额3月新高 | 周线 2-3根红柱</div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button class="btn" id="runBtn" onclick="runScreener()">▶ 立即筛选</button>
+            <span id="lastRunInfo" style="color: #888; font-size: 12px;"></span>
+        </div>
+    </div>
+    
+    <div class="progress-bar" id="progressBar">
+        <div class="progress-text" id="progressText">正在筛选: 0 / 0 <span class="stock-count" id="matchCount"></span></div>
+        <div class="progress-inner"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+    
+    <!-- 今日推荐 -->
+    <h2>📋 今日推荐 <span class="stock-count-badge" id="todayBadge" style="display:none">0只</span></h2>
+    <div id="todayList">
+        <div class="empty">暂无数据，点上方按钮开始筛选</div>
+    </div>
+    
+    <!-- 历史列表 -->
+    <h2>📅 历史筛选</h2>
+    <div id="historyList">
+        <div class="empty">加载中...</div>
+    </div>
+    
+    <!-- 任务详情（展开显示） -->
+    <div id="taskDetail" style="display:none">
+        <div class="back-btn" onclick="closeTaskDetail()">← 返回历史列表</div>
+        <h2 id="taskTitle" style="margin-top:0"></h2>
+        <div id="taskStockList">
+            <div class="empty">加载中...</div>
+        </div>
+    </div>
+    
+    <div style="text-align:center; margin-top:16px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+        <a href="/" style="color:#e94560; font-size:13px;">← 返回股票分析</a>
+        <a href="/vt" class="btn" style="background:#26de81; color:#1a1a2e; font-size:13px; padding:8px 16px;">🎯 虚拟炒股</a>
+    </div>
+    
+    <script>
+        let isRunning = false;
+        let pollTimer = null;
+        
+        function formatVol(v) {
+            if (!v || v === 0) return '-';
+            if (v >= 100000000) return (v/100000000).toFixed(2) + '亿';
+            if (v >= 10000) return (v/10000).toFixed(2) + '万';
+            return v.toFixed(0);
+        }
+        
+        // 渲染今日推荐
+        function renderTodayStocks(stocks, live) {
+            const el = document.getElementById('todayList');
+            const badge = document.getElementById('todayBadge');
+            if (!stocks || stocks.length === 0) {
+                if (!live) el.innerHTML = '<div class="empty">暂无今日数据，点上方按钮开始筛选</div>';
+                badge.style.display = 'none';
+                return;
+            }
+            badge.style.display = 'inline';
+            badge.textContent = stocks.length + '只';
+            el.innerHTML = stocks.map(s => `
+                <div class="stock-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div onclick="window.location.href='/?code=${s.code}'" style="cursor:pointer; flex:1;">
+                            <span class="stock-name">${s.name}</span>
+                            <span class="stock-code">${s.code}</span>
+                            ${live ? '<span class="live-tag">NEW</span>' : ''}
+                        </div>
+                        <button class="buy-btn" onclick="openVirtualTrade('${s.code}','${s.name}')">🎯 模拟买入</button>
+                    </div>
+                    <div class="stock-tags">
+                        <span class="tag">${s.daily || ''}</span>
+                        <span class="tag">${s.weekly || ''}</span>
+                    </div>
+                    <div class="stock-vol">成交额: ${formatVol(s.current_vol)} | DIF:${(s.dif||0).toFixed(2)} DEA:${(s.dea||0).toFixed(2)}</div>
+                </div>
+            `).join('');
+        }
+        
+        // 渲染历史列表
+        function renderHistory(history) {
+            const el = document.getElementById('historyList');
+            if (!history || history.length === 0) {
+                el.innerHTML = '<div class="empty">暂无历史筛选记录</div>';
+                return;
+            }
+            el.innerHTML = history.map(h => `
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="card-title">${h.run_date}</div>
+                        <span class="card-badge">${h.total_stocks || 0} 只</span>
+                    </div>
+                    <div class="card-meta">共 ${h.run_count} 次筛选 | 最近: ${h.last_run_time}</div>
+                    <button class="btn btn-small" style="margin-top:8px;" onclick="loadTaskDetail('${h.run_date}')">查看详情 →</button>
+                </div>
+            `).join('');
+        }
+        
+        // 加载任务详情
+        async function loadTaskDetail(date) {
+            const detail = document.getElementById('taskDetail');
+            const title = document.getElementById('taskTitle');
+            const list = document.getElementById('taskStockList');
+            
+            title.textContent = date + ' 筛选任务';
+            detail.style.display = 'block';
+            list.innerHTML = '<div class="empty">加载中...</div>';
+            
+            try {
+                const res = await fetch('/api/screener/history/' + date);
+                const data = await res.json();
+                
+                if (!data.results || data.results.length === 0) {
+                    list.innerHTML = '<div class="empty">无数据</div>';
+                    return;
+                }
+                
+                // 按 run_time 分组
+                const tasks = {};
+                for (const r of data.results) {
+                    const t = String(r.run_time || 'unknown');
+                    if (!tasks[t]) tasks[t] = [];
+                    tasks[t].push(r);
+                }
+                
+                const times = Object.keys(tasks).sort().reverse();
+                let html = '';
+                for (const time of times) {
+                    const stocks = tasks[time];
+                    const codes = [...new Set(stocks.map(s => String(s.code)))];
+                    html += `
+                        <div style="margin-top:14px;">
+                            <div class="task-header" onclick="toggleTaskStocks('${date}', '${time}', this)">
+                                <span class="task-time">⏱ ${time}</span>
+                                <span class="task-badge">${codes.length} 只</span>
+                            </div>
+                            <div class="task-stocks" id="task-${date}-${time}" style="display:none; margin-top:6px;"></div>
+                        </div>
+                    `;
+                }
+                list.innerHTML = html;
+            } catch(e) {
+                list.innerHTML = '<div class="empty">加载失败: ' + e.message + '</div>';
+            }
+        }
+        
+        // 展开/收起任务股票列表
+        async function toggleTaskStocks(date, time, headerEl) {
+            const stockDivId = 'task-' + date + '-' + time;
+            const stockDiv = document.getElementById(stockDivId);
+            
+            if (stockDiv.style.display === 'none') {
+                stockDiv.style.display = 'block';
+                stockDiv.innerHTML = '<div class="empty">加载中...</div>';
+                
+                try {
+                    const res = await fetch('/api/screener/history/' + date + '/' + encodeURIComponent(time));
+                    const data = await res.json();
+                    
+                    if (!data.results || data.results.length === 0) {
+                        stockDiv.innerHTML = '<div class="empty">无数据</div>';
+                        return;
+                    }
+                    
+                    // 去重
+                    const seen = new Set();
+                    const unique = data.results.filter(r => {
+                        if (seen.has(r.stock_code)) return false;
+                        seen.add(r.stock_code);
+                        return true;
+                    });
+                    
+                    stockDiv.innerHTML = unique.map(s => `
+                        <div class="stock-item">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div onclick="window.location.href='/?code=${s.stock_code}'" style="cursor:pointer; flex:1;">
+                                    <span class="stock-name">${s.stock_name}</span>
+                                    <span class="stock-code">${s.stock_code}</span>
+                                </div>
+                                <button class="buy-btn" onclick="openVirtualTrade('${s.stock_code}','${s.stock_name}')">🎯 模拟买入</button>
+                            </div>
+                            <div class="stock-tags">
+                                <span class="tag">${s.daily_condition || ''}</span>
+                                <span class="tag">${s.weekly_condition || ''}</span>
+                            </div>
+                            <div class="stock-vol">成交额: ${formatVol(s.current_volume)} | DIF:${(s.dif||0).toFixed(2)} DEA:${(s.dea||0).toFixed(2)}</div>
+                        </div>
+                    `).join('');
+                } catch(e) {
+                    stockDiv.innerHTML = '<div class="empty">加载失败</div>';
+                }
+            } else {
+                stockDiv.style.display = 'none';
+            }
+        }
+        
+        function closeTaskDetail() {
+            document.getElementById('taskDetail').style.display = 'none';
+        }
+        
+        // 加载状态
+        async function loadStatus() {
+            try {
+                const res = await fetch('/api/screener/status');
+                const data = await res.json();
+                
+                document.getElementById('lastRunInfo').textContent = data.time ? '上次: ' + data.time : '';
+                
+                if (data.running) {
+                    isRunning = true;
+                    document.getElementById('runBtn').disabled = true;
+                    document.getElementById('progressBar').style.display = 'block';
+                    
+                    const pct = data.total_stocks > 0 ? Math.round((data.processed || 0) / data.total_stocks * 100) : 0;
+                    document.getElementById('progressText').innerHTML = 
+                        '正在筛选: ' + (data.processed || 0) + ' / ' + (data.total_stocks || 0) + ' (' + pct + '%) <span class="stock-count">已找到 ' + (data.matched_count || 0) + ' 只</span>';
+                    document.getElementById('progressFill').style.width = pct + '%';
+                    
+                    await loadTodayResults(true);
+                } else {
+                    isRunning = false;
+                    document.getElementById('runBtn').disabled = false;
+                    document.getElementById('progressBar').style.display = 'none';
+                    await loadTodayResults(false);
+                }
+            } catch(e) {}
+        }
+        
+        async function loadTodayResults(live) {
+            try {
+                const res = await fetch('/api/screener/results');
+                const data = await res.json();
+                renderTodayStocks(data.results, live);
+            } catch(e) {}
+        }
+        
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/screener/history');
+                const data = await res.json();
+                renderHistory(data.history);
+            } catch(e) {
+                document.getElementById('historyList').innerHTML = '<div class="empty">加载失败</div>';
+            }
+        }
+        
+        async function runScreener() {
+            if (isRunning) return;
+            document.getElementById('runBtn').disabled = true;
+            document.getElementById('progressBar').style.display = 'block';
+            
+            try {
+                await fetch('/api/screener/run');
+                pollTimer = setInterval(loadStatus, 3000);
+                setTimeout(loadStatus, 500);
+            } catch(e) {
+                document.getElementById('runBtn').disabled = false;
+            }
+        }
+        
+        // 初始化
+        loadStatus();
+        loadHistory();
+        
+        setInterval(() => {
+            if (!isRunning) {
+                loadStatus();
+                loadHistory();
+            }
+        }, 10000);
+        
+        // 打开虚拟炒股买入页
+        async function openVirtualTrade(code, name) {
+            // 先获取实时价格
+            try {
+                const res = await fetch('/api/stock/' + code);
+                const data = await res.json();
+                const price = data.price || 0;
+                // 存入 sessionStorage 跳转
+                sessionStorage.setItem('vt_stock', JSON.stringify({code, name, price}));
+                window.open('/vt', '_blank');
+            } catch(e) {
+                sessionStorage.setItem('vt_stock', JSON.stringify({code, name, price: 0}));
+                window.open('/vt', '_blank');
+            }
+        }
+    </script>
+</body>
+</html>
