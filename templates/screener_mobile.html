@@ -311,6 +311,9 @@
             background: rgba(9, 16, 29, 0.58);
             border: 1px solid rgba(130, 157, 196, 0.1);
         }
+        .metric.wide {
+            grid-column: 1 / -1;
+        }
         .metric-label {
             color: var(--muted);
             font-size: 11px;
@@ -375,7 +378,7 @@
         .pager-actions {
             width: 100%;
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 8px;
         }
         .pager-btn, .page-chip {
@@ -388,6 +391,11 @@
             font-size: 12px;
             padding: 0 10px;
         }
+        .pager-btn.icon-btn {
+            font-size: 16px;
+            font-weight: 700;
+            padding: 0;
+        }
         .page-chip {
             display: inline-flex;
             align-items: center;
@@ -395,10 +403,7 @@
             background: rgba(9, 16, 29, 0.85);
         }
         .page-chip.full {
-            display: none;
-        }
-        .pager-btn.edge-btn {
-            display: none;
+            display: inline-flex;
         }
         .empty {
             padding: 24px 12px;
@@ -432,6 +437,7 @@
             .item-top { gap: 8px; }
             .name { font-size: 15px; }
             .switch-tab { font-size: 11px; }
+            .pager-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         }
     </style>
 </head>
@@ -497,11 +503,10 @@
                         <div class="pager" id="resultPager" style="display:none;">
                             <div class="pager-info" id="resultPagerInfo"></div>
                             <div class="pager-actions">
-                                <button class="pager-btn edge-btn" id="resultFirstBtn" onclick="goToResultPage(1)">第一页</button>
-                                <button class="pager-btn" id="resultPrevBtn" onclick="goToResultPage(resultState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="resultPageChip">1 / 1</span>
-                                <button class="pager-btn" id="resultNextBtn" onclick="goToResultPage(resultState.page + 1)">下一页</button>
-                                <button class="pager-btn edge-btn" id="resultLastBtn" onclick="goToResultPage(resultState.totalPages)">最后一页</button>
+                                <button class="pager-btn icon-btn" id="resultFirstBtn" onclick="goToResultPage(1)" title="第一页" aria-label="第一页">«</button>
+                                <button class="pager-btn icon-btn" id="resultPrevBtn" onclick="goToResultPage(resultState.page - 1)" title="上一页" aria-label="上一页">‹</button>
+                                <button class="pager-btn icon-btn" id="resultNextBtn" onclick="goToResultPage(resultState.page + 1)" title="下一页" aria-label="下一页">›</button>
+                                <button class="pager-btn icon-btn" id="resultLastBtn" onclick="goToResultPage(resultState.totalPages)" title="最后一页" aria-label="最后一页">»</button>
                             </div>
                         </div>
                         <div id="resultList" class="list">
@@ -523,11 +528,10 @@
                         <div class="pager" id="historyPager" style="display:none;">
                             <div class="pager-info" id="historyPagerInfo"></div>
                             <div class="pager-actions">
-                                <button class="pager-btn edge-btn" id="historyFirstBtn" onclick="goToHistoryPage(1)">第一页</button>
-                                <button class="pager-btn" id="historyPrevBtn" onclick="goToHistoryPage(historyState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="historyPageChip">1 / 1</span>
-                                <button class="pager-btn" id="historyNextBtn" onclick="goToHistoryPage(historyState.page + 1)">下一页</button>
-                                <button class="pager-btn edge-btn" id="historyLastBtn" onclick="goToHistoryPage(historyState.totalPages)">最后一页</button>
+                                <button class="pager-btn icon-btn" id="historyFirstBtn" onclick="goToHistoryPage(1)" title="第一页" aria-label="第一页">«</button>
+                                <button class="pager-btn icon-btn" id="historyPrevBtn" onclick="goToHistoryPage(historyState.page - 1)" title="上一页" aria-label="上一页">‹</button>
+                                <button class="pager-btn icon-btn" id="historyNextBtn" onclick="goToHistoryPage(historyState.page + 1)" title="下一页" aria-label="下一页">›</button>
+                                <button class="pager-btn icon-btn" id="historyLastBtn" onclick="goToHistoryPage(historyState.totalPages)" title="最后一页" aria-label="最后一页">»</button>
                             </div>
                         </div>
                         <div id="historyList" class="list">
@@ -549,11 +553,10 @@
                         <div class="pager" id="detailPager" style="display:none;">
                             <div class="pager-info" id="detailPagerInfo"></div>
                             <div class="pager-actions">
-                                <button class="pager-btn edge-btn" id="detailFirstBtn" onclick="goToDetailPage(1)">第一页</button>
-                                <button class="pager-btn" id="detailPrevBtn" onclick="goToDetailPage(detailState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="detailPageChip">1 / 1</span>
-                                <button class="pager-btn" id="detailNextBtn" onclick="goToDetailPage(detailState.page + 1)">下一页</button>
-                                <button class="pager-btn edge-btn" id="detailLastBtn" onclick="goToDetailPage(detailState.totalPages)">最后一页</button>
+                                <button class="pager-btn icon-btn" id="detailFirstBtn" onclick="goToDetailPage(1)" title="第一页" aria-label="第一页">«</button>
+                                <button class="pager-btn icon-btn" id="detailPrevBtn" onclick="goToDetailPage(detailState.page - 1)" title="上一页" aria-label="上一页">‹</button>
+                                <button class="pager-btn icon-btn" id="detailNextBtn" onclick="goToDetailPage(detailState.page + 1)" title="下一页" aria-label="下一页">›</button>
+                                <button class="pager-btn icon-btn" id="detailLastBtn" onclick="goToDetailPage(detailState.totalPages)" title="最后一页" aria-label="最后一页">»</button>
                             </div>
                         </div>
                         <div id="detailList" class="list">
@@ -681,7 +684,6 @@
             }
             pager.style.display = 'grid';
             document.getElementById(baseId + 'PagerInfo').innerHTML = `<span>共 ${total} 条，每页 ${pageSize} 条</span><span>第 ${pageState.page} / ${pageState.totalPages} 页</span>`;
-            document.getElementById(baseId + 'PageChip').textContent = `${pageState.page} / ${pageState.totalPages}`;
             document.getElementById(baseId + 'FirstBtn').disabled = pageState.page === 1;
             document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
             document.getElementById(baseId + 'NextBtn').disabled = pageState.page === pageState.totalPages;
@@ -749,7 +751,7 @@
                             <div class="metric-label">DEA</div>
                             <div class="metric-value">${deaText}</div>
                         </div>
-                        <div class="metric">
+                        <div class="metric wide">
                             <div class="metric-label">原因</div>
                             <div class="metric-value">${reasonText}</div>
                         </div>
