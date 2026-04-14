@@ -1109,34 +1109,69 @@ SCREENING_RESULT = {
 # ========== 选股模块 ==========
 
 def get_all_stocks() -> list:
-    """获取所有A股列表（从新浪获取）"""
+    """获取全量A股列表"""
     try:
+        from urllib.request import Request, urlopen
+
         stocks = []
-        headers = {"Referer": "https://finance.sina.com.cn"}
-        
-        # 分页获取沪市A股
-        for page in range(1, 30):
-            url = f"https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1&node=hs_a&symbol=&_s_r_a=page"
-            with httpx.Client(timeout=15) as client:
-                resp = client.get(url, headers=headers)
-                data = resp.json()
-            
-            if not data or len(data) == 0:
+        seen = set()
+        page = 1
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://finance.sina.com.cn",
+        }
+        base_url = (
+            "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+            "Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1"
+            "&node=hs_a&symbol=&_s_r_a=page"
+        )
+
+        while True:
+            last_error = None
+            payload_text = None
+            url = base_url.format(page=page)
+            for _ in range(3):
+                try:
+                    req = Request(url, headers=headers)
+                    with urlopen(req, timeout=20) as resp:
+                        payload_text = resp.read().decode("utf-8")
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if payload_text is None:
+                raise last_error or RuntimeError("获取股票列表失败")
+
+            data = json.loads(payload_text)
+            if not data:
                 break
-            
+
             for item in data:
-                symbol = item.get("symbol", "")
-                # symbol 格式是 sh600519 或 sz000001
-                if symbol.startswith("sh") or symbol.startswith("sz"):
-                    code = symbol[2:]  # 去掉 sh/sz 前缀
-                    if len(code) == 6:
-                        stocks.append({"code": code, "name": item.get("name", "")})
-        
-        print(f"从新浪获取到 {len(stocks)} 只股票")
+                symbol = (item.get("symbol") or "").strip()
+                code = (item.get("code") or symbol[2:]).strip()
+                name = (item.get("name") or "").strip()
+                if symbol.startswith(("sh", "sz", "bj")) and len(code) == 6 and name and code not in seen:
+                    seen.add(code)
+                    stocks.append({"code": code, "name": name})
+
+            page += 1
+            if page > 200:
+                break
+        print(f"获取到 {len(stocks)} 只股票")
         return stocks
     except Exception as e:
         print(f"获取股票列表失败: {e}")
         return []
+
+
+def stock_code_to_symbol(code: str) -> Optional[str]:
+    """将A股代码转换为腾讯接口所需 symbol"""
+    if code.startswith("6"):
+        return f"sh{code}"
+    if code.startswith(("0", "3")):
+        return f"sz{code}"
+    if code.startswith(("4", "8", "9")):
+        return f"bj{code}"
+    return None
 
 def get_kline_daily(symbol: str, days: int = 90) -> list:
     """获取日K线"""
@@ -1264,11 +1299,8 @@ def screen_stock(code: str, name: str, target_info: dict) -> dict:
     }
 
     try:
-        if code.startswith("6"):
-            symbol = f"sh{code}"
-        elif code.startswith("0") or code.startswith("3"):
-            symbol = f"sz{code}"
-        else:
+        symbol = stock_code_to_symbol(code)
+        if not symbol:
             result["reason"] = "不支持的股票代码"
             return result
 

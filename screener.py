@@ -19,18 +19,50 @@ STOCK_LIST = None
 def get_all_stocks() -> List[Dict]:
     """获取所有A股列表"""
     try:
-        url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048&fields=f12,f14"
-        with httpx.Client(timeout=30) as client:
-            resp = client.get(url)
-            data = resp.json()
-        
+        from urllib.request import Request, urlopen
+
         stocks = []
-        if data.get("data") and data["data"].get("diff"):
-            for item in data["data"]["diff"]:
-                stocks.append({
-                    "code": item.get("f12", ""),
-                    "name": item.get("f14", "")
-                })
+        seen = set()
+        page = 1
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://finance.sina.com.cn",
+        }
+        base_url = (
+            "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+            "Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1"
+            "&node=hs_a&symbol=&_s_r_a=page"
+        )
+        while True:
+            last_error = None
+            payload_text = None
+            url = base_url.format(page=page)
+            for _ in range(3):
+                try:
+                    req = Request(url, headers=headers)
+                    with urlopen(req, timeout=30) as resp:
+                        payload_text = resp.read().decode("utf-8")
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if payload_text is None:
+                raise last_error or RuntimeError("获取股票列表失败")
+
+            data = json.loads(payload_text)
+            if not data:
+                break
+
+            for item in data:
+                symbol = (item.get("symbol") or "").strip()
+                code = (item.get("code") or symbol[2:]).strip()
+                name = (item.get("name") or "").strip()
+                if symbol.startswith(("sh", "sz", "bj")) and len(code) == 6 and name and code not in seen:
+                    seen.add(code)
+                    stocks.append({"code": code, "name": name})
+
+            page += 1
+            if page > 200:
+                break
         return stocks
     except Exception as e:
         print(f"获取股票列表失败: {e}")
@@ -44,6 +76,8 @@ def get_kline_daily(stock_code: str, days: int = 90) -> Dict:
             symbol = f"sh{stock_code}"
         elif stock_code.startswith("0") or stock_code.startswith("3"):
             symbol = f"sz{stock_code}"
+        elif stock_code.startswith("4") or stock_code.startswith("8") or stock_code.startswith("9"):
+            symbol = f"bj{stock_code}"
         else:
             return {"error": "不支持的股票代码"}
         
@@ -77,6 +111,8 @@ def get_kline_weekly(stock_code: str) -> Dict:
             symbol = f"sh{stock_code}"
         elif stock_code.startswith("0") or stock_code.startswith("3"):
             symbol = f"sz{stock_code}"
+        elif stock_code.startswith("4") or stock_code.startswith("8") or stock_code.startswith("9"):
+            symbol = f"bj{stock_code}"
         else:
             return {"error": "不支持的股票代码"}
         
