@@ -1,3 +1,7 @@
-#!/bin/bash
-cd /root/.openclaw/workspace/stock-ai
-python3 main.py
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+cd "$BASE_DIR"
+exec python3 main.py

@@ -1,0 +1,16 @@
+[Unit]
+Description=Stock AI FastAPI service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/.openclaw/workspace/stock-ai
+Environment=PYTHONUNBUFFERED=1
+Environment=STOCK_AI_DB_PATH=/root/.openclaw/workspace/stock-ai/screening.db
+ExecStart=/root/.openclaw/workspace/stock-ai/.venv/bin/python /root/.openclaw/workspace/stock-ai/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
