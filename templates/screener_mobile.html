@@ -166,27 +166,26 @@
         }
         .switcher {
             display: grid;
-            grid-template-columns: repeat(3, minmax(120px, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 8px;
             padding: 8px;
             margin-bottom: 14px;
-            overflow-x: auto;
-            scroll-snap-type: x proximity;
             position: relative;
         }
         .switch-tab {
-            min-height: 42px;
+            min-height: 40px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 14px;
             background: transparent;
             color: var(--muted);
-            font-size: 13px;
+            font-size: 12px;
             cursor: pointer;
             border: 1px solid transparent;
             transition: all 0.2s ease;
-            scroll-snap-align: center;
+            min-width: 0;
+            padding: 0 6px;
         }
         .switch-tab.active {
             background: linear-gradient(135deg, rgba(255, 214, 107, 0.16), rgba(255, 155, 113, 0.12));
@@ -285,6 +284,12 @@
             line-height: 1.6;
             margin-top: 8px;
         }
+        .summary-line {
+            color: #cfdcf3;
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 8px;
+        }
         .score-badge {
             padding: 7px 10px;
             border-radius: 999px;
@@ -296,7 +301,7 @@
         }
         .metric-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
             margin-top: 12px;
         }
@@ -353,7 +358,7 @@
             display: none;
             gap: 8px;
             margin-bottom: 12px;
-            padding: 10px;
+            padding: 10px 10px 8px;
             border-radius: 16px;
             background: rgba(9, 16, 29, 0.55);
             border: 1px solid rgba(130, 157, 196, 0.12);
@@ -362,11 +367,15 @@
             width: 100%;
             color: var(--muted);
             font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
         }
         .pager-actions {
             width: 100%;
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
         }
         .pager-btn, .page-chip {
@@ -386,7 +395,7 @@
             background: rgba(9, 16, 29, 0.85);
         }
         .page-chip.full {
-            grid-column: auto;
+            display: none;
         }
         .pager-btn.edge-btn {
             display: none;
@@ -422,9 +431,7 @@
             .item { padding: 12px; }
             .item-top { gap: 8px; }
             .name { font-size: 15px; }
-            .metric-grid { grid-template-columns: 1fr 1fr; }
-            .pager-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .page-chip.full { grid-column: 1 / -1; }
+            .switch-tab { font-size: 11px; }
         }
     </style>
 </head>
@@ -673,7 +680,7 @@
                 return;
             }
             pager.style.display = 'grid';
-            document.getElementById(baseId + 'PagerInfo').textContent = `共 ${total} 条，每页 ${pageSize} 条`;
+            document.getElementById(baseId + 'PagerInfo').innerHTML = `<span>共 ${total} 条，每页 ${pageSize} 条</span><span>第 ${pageState.page} / ${pageState.totalPages} 页</span>`;
             document.getElementById(baseId + 'PageChip').textContent = `${pageState.page} / ${pageState.totalPages}`;
             document.getElementById(baseId + 'FirstBtn').disabled = pageState.page === 1;
             document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
@@ -716,18 +723,19 @@
             const difText = Number(item.dif || 0).toFixed(2);
             const deaText = Number(item.dea || 0).toFixed(2);
             const reasonText = item.reason || item.weekly || '-';
+            const summaryText = item.daily && item.daily !== '未返回命中策略' ? item.daily : '暂无策略摘要';
             return `
                 <div class="item">
                     <div class="item-top">
                         <div class="item-main">
                             <div class="name">${item.name}</div>
                             <span class="code">${item.code}</span>
-                            <div class="subline">${item.daily || '未返回命中策略'}</div>
+                            <div class="subline">${summaryText}</div>
                         </div>
                         <div class="score-badge">评分 ${score}</div>
                     </div>
                     <div class="chip-row">${matched || '<span class="pill">未返回命中策略</span>'}</div>
-                    <div class="reason">${reasonText}</div>
+                    <div class="summary-line">量价指标摘要</div>
                     <div class="metric-grid">
                         <div class="metric">
                             <div class="metric-label">成交量</div>
@@ -742,8 +750,8 @@
                             <div class="metric-value">${deaText}</div>
                         </div>
                         <div class="metric">
-                            <div class="metric-label">策略</div>
-                            <div class="metric-value">${item.daily || '未命中'}</div>
+                            <div class="metric-label">原因</div>
+                            <div class="metric-value">${reasonText}</div>
                         </div>
                     </div>
                 </div>
