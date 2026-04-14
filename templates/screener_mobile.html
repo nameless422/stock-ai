@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <!-- mobile-template: screener -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>策略选股</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #09111f;
+            --panel: rgba(18, 30, 48, 0.92);
+            --panel-strong: #111d31;
+            --line: rgba(130, 157, 196, 0.18);
+            --text: #edf4ff;
+            --muted: #8ea3c4;
+            --accent: #ff9b71;
+            --accent-2: #ffd66b;
+            --success: #72f0ba;
+            --chip: #1a2a43;
+            --shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(255, 155, 113, 0.18), transparent 30%),
+                radial-gradient(circle at top right, rgba(114, 240, 186, 0.12), transparent 28%),
+                linear-gradient(180deg, #0c1629 0%, #09111f 50%, #060c17 100%);
+        }
+        .page {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 18px 14px 28px;
+        }
+        .hero {
+            padding: 4px 2px 18px;
+        }
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 214, 107, 0.12);
+            color: var(--accent-2);
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        h1 {
+            font-size: 28px;
+            line-height: 1.08;
+            margin-bottom: 10px;
+            letter-spacing: -0.03em;
+        }
+        .sub {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.75;
+        }
+        .hero-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .surface {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+        .control-card {
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .btn, select {
+            min-height: 46px;
+            width: 100%;
+            border-radius: 14px;
+            border: none;
+            font-size: 14px;
+        }
+        select {
+            background: #101b2f;
+            color: var(--text);
+            border: 1px solid var(--line);
+            padding: 0 14px;
+            appearance: none;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            cursor: pointer;
+            padding: 0 16px;
+        }
+        .btn.primary {
+            background: linear-gradient(135deg, var(--accent-2), var(--accent));
+            color: #2d1700;
+            font-weight: 700;
+        }
+        .btn.secondary {
+            background: #18263d;
+            color: #d6e4ff;
+            border: 1px solid var(--line);
+        }
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .status-strip {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: rgba(9, 16, 29, 0.55);
+            border: 1px solid rgba(130, 157, 196, 0.12);
+            margin-bottom: 12px;
+        }
+        .status-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--muted);
+        }
+        .status-live {
+            color: var(--success);
+            font-weight: 700;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .stat {
+            padding: 14px 12px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(26, 42, 67, 0.95), rgba(15, 25, 42, 0.92));
+            border: 1px solid rgba(130, 157, 196, 0.12);
+        }
+        .stat-label {
+            color: var(--muted);
+            font-size: 11px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            word-break: break-word;
+        }
+        .section {
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+        .switcher {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(120px, 1fr));
+            gap: 8px;
+            padding: 8px;
+            margin-bottom: 14px;
+            overflow-x: auto;
+            scroll-snap-type: x proximity;
+            position: relative;
+        }
+        .switch-tab {
+            min-height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+            scroll-snap-align: center;
+        }
+        .switch-tab.active {
+            background: linear-gradient(135deg, rgba(255, 214, 107, 0.16), rgba(255, 155, 113, 0.12));
+            color: var(--text);
+            border-color: rgba(255, 214, 107, 0.24);
+            font-weight: 700;
+        }
+        .switch-tab.disabled {
+            opacity: 0.4;
+        }
+        .switch-indicator {
+            position: absolute;
+            left: 8px;
+            bottom: 4px;
+            height: 3px;
+            width: calc((100% - 32px) / 3);
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent-2), var(--accent));
+            box-shadow: 0 0 18px rgba(255, 214, 107, 0.22);
+            transition: transform 0.28s ease, width 0.28s ease;
+            pointer-events: none;
+        }
+        .mobile-panel {
+            display: none;
+        }
+        .mobile-panel.active {
+            display: block;
+        }
+        .swipe-stage {
+            overflow: hidden;
+            position: relative;
+        }
+        .swipe-track {
+            display: flex;
+            width: 300%;
+            transition: transform 0.28s ease;
+            will-change: transform;
+        }
+        .swipe-track.dragging {
+            transition: none;
+        }
+        .swipe-slide {
+            width: 100%;
+            flex: 0 0 100%;
+        }
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .section-head h2 {
+            font-size: 17px;
+            line-height: 1.25;
+        }
+        .section-meta {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+            text-align: right;
+        }
+        .list {
+            display: grid;
+            gap: 10px;
+        }
+        .item {
+            padding: 14px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(19, 33, 54, 0.95), rgba(11, 21, 37, 0.98));
+            border: 1px solid rgba(130, 157, 196, 0.14);
+        }
+        .item-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .code {
+            display: inline-block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+        .score-badge {
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: rgba(255, 214, 107, 0.14);
+            color: var(--accent-2);
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: var(--chip);
+            color: #b7d7ff;
+            font-size: 12px;
+        }
+        .reason {
+            color: #d5e3fb;
+            font-size: 13px;
+            line-height: 1.75;
+            margin-top: 10px;
+        }
+        .small {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+        .history-item {
+            cursor: pointer;
+        }
+        .pager {
+            display: none;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 10px;
+            border-radius: 16px;
+            background: rgba(9, 16, 29, 0.55);
+            border: 1px solid rgba(130, 157, 196, 0.12);
+        }
+        .pager-info {
+            width: 100%;
+            color: var(--muted);
+            font-size: 12px;
+        }
+        .pager-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .pager-btn, .page-chip {
+            min-height: 42px;
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid rgba(130, 157, 196, 0.12);
+            background: #18263d;
+            color: #d6e4ff;
+            font-size: 12px;
+        }
+        .page-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(9, 16, 29, 0.85);
+        }
+        .page-chip.full {
+            grid-column: 1 / -1;
+        }
+        .empty {
+            padding: 24px 12px;
+            text-align: center;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+        .nav-card {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 14px;
+        }
+        .nav-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            border-radius: 14px;
+            text-decoration: none;
+            color: #d6e4ff;
+            background: #152237;
+            border: 1px solid rgba(130, 157, 196, 0.12);
+        }
+        @media (max-width: 420px) {
+            .page { padding: 16px 12px 26px; }
+            h1 { font-size: 24px; }
+            .hero-actions, .control-grid, .meta-grid, .nav-card { grid-template-columns: 1fr; }
+            .stat-value { font-size: 19px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="hero">
+            <div class="eyebrow">Mobile Edition</div>
+            <h1>策略选股台</h1>
+            <div class="sub">把运行控制、结果浏览和历史追踪拆成适合单手操作的手机卡片。重点信息前置，翻页和详情保留，但不再沿用桌面栏位结构。</div>
+            <div class="hero-actions">
+                <a class="btn secondary" href="/strategies">管理策略</a>
+                <button class="btn primary" id="runBtn" onclick="runScreener()">开始筛选</button>
+            </div>
+        </div>
+
+        <div class="surface control-card">
+            <div class="control-grid">
+                <select id="targetType" onchange="onTargetTypeChange()">
+                    <option value="strategy">按策略执行</option>
+                    <option value="group">按策略组执行</option>
+                </select>
+                <select id="targetId"></select>
+            </div>
+            <div class="status-strip">
+                <div class="status-text" id="statusText">尚未开始运行</div>
+                <div class="status-text" id="lastRunText"></div>
+            </div>
+            <div class="meta-grid">
+                <div class="stat">
+                    <div class="stat-label">当前目标</div>
+                    <div class="stat-value" id="currentTarget">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">最新命中</div>
+                    <div class="stat-value" id="matchedCount">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">扫描进度</div>
+                    <div class="stat-value" id="progressValue">0 / 0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="surface switcher" id="mobileSwitcher">
+            <button class="switch-tab active" id="switchResults" onclick="switchMobileSection('results')">结果</button>
+            <button class="switch-tab" id="switchHistory" onclick="switchMobileSection('history')">历史</button>
+            <button class="switch-tab" id="switchDetail" onclick="switchMobileSection('detail')">详情</button>
+            <div class="switch-indicator" id="switchIndicator"></div>
+        </div>
+
+        <div class="swipe-stage" id="swipeStage">
+            <div class="swipe-track" id="swipeTrack">
+                <div class="swipe-slide">
+                    <div class="mobile-panel active" id="panelResults">
+                    <div class="surface section">
+                        <div class="section-head">
+                            <div>
+                                <h2>最新结果</h2>
+                                <div class="small" id="resultMeta" style="margin-top:4px;"></div>
+                            </div>
+                            <div class="section-meta">优先展示最新命中</div>
+                        </div>
+                        <div class="pager" id="resultPager" style="display:none;">
+                            <div class="pager-info" id="resultPagerInfo"></div>
+                            <div class="pager-actions">
+                                <button class="pager-btn" id="resultFirstBtn" onclick="goToResultPage(1)">第一页</button>
+                                <button class="pager-btn" id="resultPrevBtn" onclick="goToResultPage(resultState.page - 1)">上一页</button>
+                                <span class="page-chip full" id="resultPageChip">1 / 1</span>
+                                <button class="pager-btn" id="resultNextBtn" onclick="goToResultPage(resultState.page + 1)">下一页</button>
+                                <button class="pager-btn" id="resultLastBtn" onclick="goToResultPage(resultState.totalPages)">最后一页</button>
+                            </div>
+                        </div>
+                        <div id="resultList" class="list">
+                            <div class="empty">暂无命中结果</div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                <div class="swipe-slide">
+                    <div class="mobile-panel" id="panelHistory">
+                    <div class="surface section">
+                        <div class="section-head">
+                            <div>
+                                <h2>运行历史</h2>
+                                <div class="small" style="margin-top:4px;">点击某次运行查看详情</div>
+                            </div>
+                            <div class="section-meta">最近 30 次</div>
+                        </div>
+                        <div class="pager" id="historyPager" style="display:none;">
+                            <div class="pager-info" id="historyPagerInfo"></div>
+                            <div class="pager-actions">
+                                <button class="pager-btn" id="historyFirstBtn" onclick="goToHistoryPage(1)">第一页</button>
+                                <button class="pager-btn" id="historyPrevBtn" onclick="goToHistoryPage(historyState.page - 1)">上一页</button>
+                                <span class="page-chip full" id="historyPageChip">1 / 1</span>
+                                <button class="pager-btn" id="historyNextBtn" onclick="goToHistoryPage(historyState.page + 1)">下一页</button>
+                                <button class="pager-btn" id="historyLastBtn" onclick="goToHistoryPage(historyState.totalPages)">最后一页</button>
+                            </div>
+                        </div>
+                        <div id="historyList" class="list">
+                            <div class="empty">加载中...</div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                <div class="swipe-slide">
+                    <div class="mobile-panel" id="panelDetail">
+                    <div class="surface section">
+                        <div class="section-head">
+                            <div>
+                                <h2>运行详情</h2>
+                                <div class="small" id="detailMeta" style="margin-top:4px;">请选择一条历史记录</div>
+                            </div>
+                            <div class="section-meta">命中股票明细</div>
+                        </div>
+                        <div class="pager" id="detailPager" style="display:none;">
+                            <div class="pager-info" id="detailPagerInfo"></div>
+                            <div class="pager-actions">
+                                <button class="pager-btn" id="detailFirstBtn" onclick="goToDetailPage(1)">第一页</button>
+                                <button class="pager-btn" id="detailPrevBtn" onclick="goToDetailPage(detailState.page - 1)">上一页</button>
+                                <span class="page-chip full" id="detailPageChip">1 / 1</span>
+                                <button class="pager-btn" id="detailNextBtn" onclick="goToDetailPage(detailState.page + 1)">下一页</button>
+                                <button class="pager-btn" id="detailLastBtn" onclick="goToDetailPage(detailState.totalPages)">最后一页</button>
+                            </div>
+                        </div>
+                        <div id="detailList" class="list">
+                            <div class="empty">暂无详情</div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="surface nav-card">
+            <a class="nav-link" href="/">返回股票分析</a>
+            <a class="nav-link" href="/vt">虚拟炒股</a>
+        </div>
+    </div>
+
+    <script>
+        let targetOptions = { strategies: [], groups: [] };
+        let fastPollTimer = null;
+        let slowPollTimer = null;
+        let detailRequestKey = '';
+        let resultRenderToken = 0;
+        const RESULT_PAGE_SIZE = 10;
+        const HISTORY_PAGE_SIZE = 10;
+        const DETAIL_PAGE_SIZE = 10;
+        let resultState = {
+            items: [],
+            page: 1,
+            totalPages: 1,
+        };
+        let historyState = {
+            items: [],
+            page: 1,
+            totalPages: 1,
+        };
+        let detailState = {
+            items: [],
+            page: 1,
+            totalPages: 1,
+        };
+        let state = {
+            lastStatusKey: '',
+            lastResultKey: '',
+            lastHistoryKey: '',
+            lastMatchedCount: -1,
+            lastRunning: false,
+            currentDetailKey: '',
+        };
+        let activeMobileSection = 'results';
+        let swipeState = {
+            startX: 0,
+            currentX: 0,
+            dragging: false,
+        };
+        let detailReady = false;
+
+        function updateSwitchIndicator() {
+            const indicator = document.getElementById('switchIndicator');
+            const tabs = ['switchResults', 'switchHistory', 'switchDetail'].map(id => document.getElementById(id));
+            const active = tabs.find(tab => tab.classList.contains('active'));
+            const switcher = document.getElementById('mobileSwitcher');
+            if (!indicator || !active || !switcher) return;
+            const switcherRect = switcher.getBoundingClientRect();
+            const activeRect = active.getBoundingClientRect();
+            indicator.style.width = `${activeRect.width}px`;
+            indicator.style.transform = `translateX(${activeRect.left - switcherRect.left - switcher.scrollLeft}px)`;
+        }
+
+        function syncSwipeTrack(offsetPx = null) {
+            const track = document.getElementById('swipeTrack');
+            const stage = document.getElementById('swipeStage');
+            const indexMap = { results: 0, history: 1, detail: 2 };
+            const width = stage.clientWidth || 1;
+            const base = -indexMap[activeMobileSection] * width;
+            track.style.transform = `translateX(${offsetPx === null ? base : base + offsetPx}px)`;
+        }
+
+        function switchMobileSection(section, smooth = true) {
+            if (section === 'detail' && !detailReady) {
+                return;
+            }
+            activeMobileSection = section;
+            const sections = ['results', 'history', 'detail'];
+            sections.forEach(name => {
+                document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.toggle('active', name === section);
+                document.getElementById('switch' + name.charAt(0).toUpperCase() + name.slice(1)).classList.toggle('active', name === section);
+            });
+            const detailTab = document.getElementById('switchDetail');
+            detailTab.classList.toggle('disabled', !detailReady);
+            const activeTab = document.getElementById('switch' + section.charAt(0).toUpperCase() + section.slice(1));
+            activeTab.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+            const track = document.getElementById('swipeTrack');
+            track.classList.remove('dragging');
+            syncSwipeTrack();
+            updateSwitchIndicator();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function setupSwipeTabs() {
+            const stage = document.getElementById('swipeStage');
+            const track = document.getElementById('swipeTrack');
+            const ordered = ['results', 'history', 'detail'];
+
+            const onStart = (clientX) => {
+                swipeState.startX = clientX;
+                swipeState.currentX = clientX;
+                swipeState.dragging = true;
+                track.classList.add('dragging');
+            };
+
+            const onMove = (clientX) => {
+                if (!swipeState.dragging) return;
+                swipeState.currentX = clientX;
+                const delta = clientX - swipeState.startX;
+                const currentIndex = ordered.indexOf(activeMobileSection);
+                const atStart = currentIndex === 0 && delta > 0;
+                const atEnd = currentIndex === ordered.length - 1 && delta < 0;
+                syncSwipeTrack((atStart || atEnd) ? delta * 0.35 : delta);
+            };
+
+            const onEnd = () => {
+                if (!swipeState.dragging) return;
+                const delta = swipeState.currentX - swipeState.startX;
+                swipeState.dragging = false;
+                const currentIndex = ordered.indexOf(activeMobileSection);
+                let nextIndex = currentIndex;
+                if (Math.abs(delta) > 56) {
+                    if (delta < 0 && currentIndex < ordered.length - 1) nextIndex += 1;
+                    if (delta > 0 && currentIndex > 0) nextIndex -= 1;
+                }
+                switchMobileSection(ordered[nextIndex], false);
+            };
+
+            stage.addEventListener('touchstart', (event) => {
+                if (event.touches.length !== 1) return;
+                onStart(event.touches[0].clientX);
+            }, { passive: true });
+
+            stage.addEventListener('touchmove', (event) => {
+                if (event.touches.length !== 1) return;
+                onMove(event.touches[0].clientX);
+            }, { passive: true });
+
+            stage.addEventListener('touchend', onEnd);
+            stage.addEventListener('touchcancel', onEnd);
+            stage.addEventListener('mousedown', (event) => onStart(event.clientX));
+            window.addEventListener('mousemove', (event) => onMove(event.clientX));
+            window.addEventListener('mouseup', onEnd);
+            window.addEventListener('resize', () => {
+                syncSwipeTrack();
+                updateSwitchIndicator();
+            });
+            syncSwipeTrack();
+        }
+
+        function qs() {
+            const targetType = document.getElementById('targetType').value;
+            const targetId = document.getElementById('targetId').value;
+            const params = new URLSearchParams();
+            if (targetType) params.set('target_type', targetType);
+            if (targetId) params.set('target_id', targetId);
+            return params.toString();
+        }
+
+        function currentTargetName() {
+            const targetType = document.getElementById('targetType').value;
+            const targetId = Number(document.getElementById('targetId').value || 0);
+            const list = targetType === 'group' ? targetOptions.groups : targetOptions.strategies;
+            const found = list.find(item => Number(item.id) === targetId);
+            return found ? found.name : '-';
+        }
+
+        function resultSignature(items) {
+            return (items || []).map(item => `${item.code}:${item.score}:${item.reason}:${(item.matched_strategies || []).join('|')}`).join('||');
+        }
+
+        function historySignature(items) {
+            return (items || []).map(item => `${item.run_date}:${item.run_time}:${item.target_type}:${item.target_id}:${item.matched_count}`).join('||');
+        }
+
+        function updatePager(baseId, pageState, pageSize) {
+            const pager = document.getElementById(baseId + 'Pager');
+            const total = pageState.items.length;
+            pageState.totalPages = Math.max(1, Math.ceil(total / pageSize));
+            pageState.page = Math.min(Math.max(1, pageState.page), pageState.totalPages);
+            if (total <= pageSize) {
+                pager.style.display = 'none';
+                return;
+            }
+            pager.style.display = 'grid';
+            document.getElementById(baseId + 'PagerInfo').textContent = `共 ${total} 条，每页 ${pageSize} 条`;
+            document.getElementById(baseId + 'PageChip').textContent = `${pageState.page} / ${pageState.totalPages}`;
+            document.getElementById(baseId + 'FirstBtn').disabled = pageState.page === 1;
+            document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
+            document.getElementById(baseId + 'NextBtn').disabled = pageState.page === pageState.totalPages;
+            document.getElementById(baseId + 'LastBtn').disabled = pageState.page === pageState.totalPages;
+        }
+
+        function updateResultPager() {
+            updatePager('result', resultState, RESULT_PAGE_SIZE);
+        }
+
+        function goToResultPage(page) {
+            const nextPage = Math.min(Math.max(1, page), resultState.totalPages);
+            if (nextPage === resultState.page) return;
+            resultState.page = nextPage;
+            updateResultPager();
+            renderResultsPage();
+        }
+
+        function goToHistoryPage(page) {
+            const nextPage = Math.min(Math.max(1, page), historyState.totalPages);
+            if (nextPage === historyState.page) return;
+            historyState.page = nextPage;
+            updatePager('history', historyState, HISTORY_PAGE_SIZE);
+            renderHistoryPage();
+        }
+
+        function goToDetailPage(page) {
+            const nextPage = Math.min(Math.max(1, page), detailState.totalPages);
+            if (nextPage === detailState.page) return;
+            detailState.page = nextPage;
+            updatePager('detail', detailState, DETAIL_PAGE_SIZE);
+            renderDetailPage();
+        }
+
+        function resultCardTemplate(item) {
+            return `
+                <div class="item">
+                    <div class="item-top">
+                        <div>
+                            <div class="name">${item.name}</div>
+                            <span class="code">${item.code}</span>
+                        </div>
+                        <div class="score-badge">评分 ${Number(item.score || 0).toFixed(1)}</div>
+                    </div>
+                    <div class="chip-row">${(item.matched_strategies || []).map(name => `<span class="pill">${name}</span>`).join('') || '<span class="pill">未返回命中策略</span>'}</div>
+                    <div class="reason">${item.reason || item.weekly || '-'}</div>
+                    <div class="small">成交量 ${formatVol(item.current_vol)} | DIF ${Number(item.dif || 0).toFixed(2)} | DEA ${Number(item.dea || 0).toFixed(2)}</div>
+                </div>
+            `;
+        }
+
+        function renderResultsPage() {
+            const el = document.getElementById('resultList');
+            resultRenderToken += 1;
+            const currentToken = resultRenderToken;
+            const items = resultState.items || [];
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">暂无命中结果</div>';
+                return;
+            }
+            const startIndex = (resultState.page - 1) * RESULT_PAGE_SIZE;
+            const pageItems = items.slice(startIndex, startIndex + RESULT_PAGE_SIZE);
+            const firstChunkSize = 20;
+            const chunkSize = 40;
+            el.innerHTML = pageItems.slice(0, firstChunkSize).map(resultCardTemplate).join('');
+            if (pageItems.length <= firstChunkSize) return;
+
+            let cursor = firstChunkSize;
+            const appendChunk = () => {
+                if (currentToken !== resultRenderToken) return;
+                const nextSlice = pageItems.slice(cursor, cursor + chunkSize);
+                if (!nextSlice.length) return;
+                el.insertAdjacentHTML('beforeend', nextSlice.map(resultCardTemplate).join(''));
+                cursor += chunkSize;
+                if (cursor < pageItems.length) {
+                    if (window.requestIdleCallback) {
+                        window.requestIdleCallback(appendChunk, { timeout: 120 });
+                    } else {
+                        window.setTimeout(appendChunk, 16);
+                    }
+                }
+            };
+
+            if (window.requestIdleCallback) {
+                window.requestIdleCallback(appendChunk, { timeout: 120 });
+            } else {
+                window.setTimeout(appendChunk, 16);
+            }
+        }
+
+        function renderResults(items, preservePage = true) {
+            const previousFirstCode = (resultState.items[(resultState.page - 1) * RESULT_PAGE_SIZE] || {}).code;
+            resultState.items = items || [];
+            if (!preservePage) {
+                resultState.page = 1;
+            } else if (previousFirstCode) {
+                const newIndex = resultState.items.findIndex(item => item.code === previousFirstCode);
+                if (newIndex >= 0) {
+                    resultState.page = Math.floor(newIndex / RESULT_PAGE_SIZE) + 1;
+                }
+            }
+            updateResultPager();
+            renderResultsPage();
+        }
+
+        function renderHistoryPage() {
+            const el = document.getElementById('historyList');
+            const items = historyState.items || [];
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">暂无历史记录</div>';
+                return;
+            }
+            const startIndex = (historyState.page - 1) * HISTORY_PAGE_SIZE;
+            const pageItems = items.slice(startIndex, startIndex + HISTORY_PAGE_SIZE);
+            el.innerHTML = pageItems.map(item => `
+                <div class="item history-item" onclick="loadDetail('${item.run_date}', '${item.run_time}', '${item.target_type || ''}', '${item.target_id || ''}')">
+                    <div class="item-top">
+                        <div>
+                            <div class="name">${item.target_name || '未命名目标'}</div>
+                            <div class="small">${item.run_date} ${item.run_time}</div>
+                        </div>
+                        <div class="score-badge">命中 ${item.matched_count || 0}</div>
+                    </div>
+                    <div class="chip-row">
+                        <span class="pill">${item.target_type === 'group' ? '策略组' : '策略'}</span>
+                        <span class="pill">${item.target_logic || '-'}</span>
+                        <span class="pill">总量 ${item.total_stocks || 0}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderHistory(items, preservePage = true) {
+            if (!preservePage) historyState.page = 1;
+            historyState.items = items || [];
+            updatePager('history', historyState, HISTORY_PAGE_SIZE);
+            renderHistoryPage();
+        }
+
+        function renderDetailPage() {
+            const el = document.getElementById('detailList');
+            const items = detailState.items || [];
+            if (!items.length) {
+                el.innerHTML = '<div class="empty">本次运行没有命中股票</div>';
+                return;
+            }
+            const startIndex = (detailState.page - 1) * DETAIL_PAGE_SIZE;
+            const pageItems = items.slice(startIndex, startIndex + DETAIL_PAGE_SIZE);
+            el.innerHTML = pageItems.map(item => `
+                <div class="item">
+                    <div class="item-top">
+                        <div>
+                            <div class="name">${item.stock_name}</div>
+                            <span class="code">${item.stock_code}</span>
+                        </div>
+                        <div class="score-badge">评分 ${Number(item.score || 0).toFixed(1)}</div>
+                    </div>
+                    <div class="chip-row">${String(item.matched_strategies || '').split(',').filter(Boolean).map(name => `<span class="pill">${name.trim()}</span>`).join('')}</div>
+                    <div class="reason">${item.weekly_condition || '-'}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderDetail(items, preservePage = false) {
+            if (!preservePage) detailState.page = 1;
+            detailState.items = items || [];
+            updatePager('detail', detailState, DETAIL_PAGE_SIZE);
+            renderDetailPage();
+        }
+
+        function formatVol(v) {
+            const value = Number(v || 0);
+            if (!value) return '-';
+            if (value >= 100000000) return (value / 100000000).toFixed(2) + '亿';
+            if (value >= 10000) return (value / 10000).toFixed(2) + '万';
+            return value.toFixed(0);
+        }
+
+        async function loadTargets() {
+            const res = await fetch('/api/screener/targets');
+            targetOptions = await res.json();
+            onTargetTypeChange();
+        }
+
+        function onTargetTypeChange() {
+            const type = document.getElementById('targetType').value;
+            const select = document.getElementById('targetId');
+            const items = type === 'group' ? targetOptions.groups : targetOptions.strategies.filter(item => item.enabled !== 0);
+            select.innerHTML = items.map(item => `<option value="${item.id}">${item.name}</option>`).join('');
+            document.getElementById('currentTarget').textContent = currentTargetName();
+            refreshAll();
+        }
+
+        async function loadStatus() {
+            const res = await fetch('/api/screener/status?' + qs());
+            const data = await res.json();
+            const statusKey = [
+                data.running ? '1' : '0',
+                data.time || '',
+                data.processed || 0,
+                data.total_stocks || 0,
+                data.matched_count || 0,
+                data.target_type || '',
+                data.target_id || '',
+            ].join('|');
+            if (statusKey === state.lastStatusKey) return data;
+            state.lastStatusKey = statusKey;
+            document.getElementById('currentTarget').textContent = data.target_name || currentTargetName();
+            document.getElementById('matchedCount').textContent = data.matched_count || 0;
+            document.getElementById('progressValue').textContent = `${data.processed || 0} / ${data.total_stocks || 0}`;
+            document.getElementById('statusText').innerHTML = data.running
+                ? '<span class="status-live">正在扫描全市场...</span>'
+                : (data.status === 'completed' ? '最近一次运行已完成' : '当前没有运行中的任务');
+            document.getElementById('lastRunText').textContent = data.time ? `最近运行：${data.time}` : '';
+            document.getElementById('runBtn').disabled = !!data.running;
+            if (data.running && (!state.lastRunning || data.matched_count !== state.lastMatchedCount)) {
+                loadResults(true);
+            }
+            if (!data.running && state.lastRunning) {
+                loadResults(true);
+                loadHistory(true);
+            }
+            state.lastMatchedCount = data.matched_count || 0;
+            state.lastRunning = !!data.running;
+            return data;
+        }
+
+        async function loadResults(force = false) {
+            const res = await fetch('/api/screener/results?' + qs());
+            const data = await res.json();
+            const signature = `${data.time || ''}#${resultSignature(data.results)}`;
+            if (!force && signature === state.lastResultKey) return;
+            state.lastResultKey = signature;
+            document.getElementById('resultMeta').textContent = data.time ? `${data.target_name || '-'} · ${data.time} · ${data.total} 只` : '';
+            renderResults(data.results || [], !force);
+        }
+
+        async function loadHistory(force = false) {
+            const res = await fetch('/api/screener/history?' + qs());
+            const data = await res.json();
+            const signature = historySignature(data.history);
+            if (!force && signature === state.lastHistoryKey) return;
+            state.lastHistoryKey = signature;
+            renderHistory(data.history || [], !force);
+        }
+
+        async function loadDetail(runDate, runTime, targetType, targetId) {
+            const params = new URLSearchParams();
+            if (targetType) params.set('target_type', targetType);
+            if (targetId) params.set('target_id', targetId);
+            detailRequestKey = `${runDate}|${runTime}|${targetType}|${targetId}`;
+            state.currentDetailKey = detailRequestKey;
+            const res = await fetch(`/api/screener/history/${runDate}/${encodeURIComponent(runTime)}?` + params.toString());
+            const data = await res.json();
+            if (state.currentDetailKey !== detailRequestKey) return;
+            document.getElementById('detailMeta').textContent = `${runDate} ${runTime} · 共 ${data.total || 0} 只`;
+            detailReady = true;
+            renderDetail(data.results || [], false);
+            switchMobileSection('detail');
+        }
+
+        async function runScreener() {
+            const res = await fetch('/api/screener/run?' + qs());
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.message || data.error || '启动失败');
+                return;
+            }
+            startPolling();
+            await loadStatus();
+        }
+
+        async function refreshAll() {
+            await loadStatus();
+            await loadResults(true);
+            await loadHistory(true);
+        }
+
+        function stopPolling() {
+            if (fastPollTimer) clearInterval(fastPollTimer);
+            if (slowPollTimer) clearInterval(slowPollTimer);
+            fastPollTimer = null;
+            slowPollTimer = null;
+        }
+
+        function startPolling() {
+            stopPolling();
+            fastPollTimer = setInterval(() => {
+                loadStatus();
+            }, 1000);
+            slowPollTimer = setInterval(async () => {
+                if (state.lastRunning) {
+                    await loadResults();
+                } else {
+                    await loadResults();
+                    await loadHistory();
+                }
+            }, 5000);
+        }
+
+        document.getElementById('targetId').addEventListener('change', () => {
+            document.getElementById('currentTarget').textContent = currentTargetName();
+            state.lastStatusKey = '';
+            state.lastResultKey = '';
+            state.lastHistoryKey = '';
+            state.lastMatchedCount = -1;
+            resultState.page = 1;
+            historyState.page = 1;
+            detailState.page = 1;
+            refreshAll();
+        });
+
+        (async function init() {
+            await loadTargets();
+            startPolling();
+            setupSwipeTabs();
+            switchMobileSection('results', false);
+            document.getElementById('switchDetail').classList.add('disabled');
+            updateSwitchIndicator();
+        })();
+    </script>
+</body>
+</html>

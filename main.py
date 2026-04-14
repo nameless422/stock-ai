@@ -6,7 +6,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Form, HTTPException, Cookie
+from fastapi import FastAPI, Form, HTTPException, Cookie, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -19,14 +19,40 @@ import sqlite3
 import os
 import hashlib
 import secrets
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+
+from strategy_engine import (
+    DEFAULT_STRATEGY_CODE,
+    DEFAULT_STRATEGY_DESCRIPTION,
+    DEFAULT_STRATEGY_NAME,
+    build_strategy_context,
+    get_strategy_contract,
+    run_strategy_code,
+)
 
 app = FastAPI(title="股票K线AI分析", description="A股实时数据 + K线图 + AI决策建议")
 
-DB_PATH = "/root/.openclaw/workspace/stock-ai/screening.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LEGACY_DB_PATH = "/root/.openclaw/workspace/stock-ai/screening.db"
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "screening.db")
+DB_PATH = os.getenv(
+    "STOCK_AI_DB_PATH",
+    LEGACY_DB_PATH if os.path.isdir(os.path.dirname(LEGACY_DB_PATH)) else DEFAULT_DB_PATH,
+)
+SCREENING_MAX_WORKERS = max(4, min(24, int(os.getenv("SCREENING_MAX_WORKERS", "12"))))
+SCREENING_SUBMIT_BATCH = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "200")))
+SCREENING_SAVE_INTERVAL = max(10, int(os.getenv("SCREENING_SAVE_INTERVAL", "25")))
+
+
+def ensure_column(cursor, table_name, column_name, column_sql):
+    columns = [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    if column_name not in columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
 # 初始化数据库
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS screening_results (
@@ -52,21 +78,92 @@ def init_db():
         status TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
+    ensure_column(c, "screening_results", "target_type", "TEXT")
+    ensure_column(c, "screening_results", "target_id", "INTEGER")
+    ensure_column(c, "screening_results", "target_name", "TEXT")
+    ensure_column(c, "screening_results", "matched_strategies", "TEXT")
+    ensure_column(c, "screening_results", "result_payload", "TEXT")
+    ensure_column(c, "screening_results", "score", "REAL DEFAULT 0")
+    ensure_column(c, "screening_runs", "target_type", "TEXT")
+    ensure_column(c, "screening_runs", "target_id", "INTEGER")
+    ensure_column(c, "screening_runs", "target_name", "TEXT")
+    ensure_column(c, "screening_runs", "target_logic", "TEXT")
+    c.execute('''CREATE TABLE IF NOT EXISTS strategy_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        code TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        create_mode TEXT DEFAULT 'direct',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS strategy_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        match_mode TEXT DEFAULT 'AND',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS strategy_group_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        strategy_id INTEGER NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(group_id, strategy_id),
+        FOREIGN KEY (group_id) REFERENCES strategy_groups(id),
+        FOREIGN KEY (strategy_id) REFERENCES strategy_definitions(id)
+    )''')
+    c.execute("CREATE INDEX IF NOT EXISTS idx_screening_runs_target ON screening_runs(target_type, target_id, created_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_screening_results_target ON screening_results(target_type, target_id, run_date, run_time)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_strategy_group_items_group ON strategy_group_items(group_id, sort_order)")
+    c.execute("SELECT id FROM strategy_definitions WHERE name = ?", (DEFAULT_STRATEGY_NAME,))
+    if not c.fetchone():
+        c.execute(
+            """INSERT INTO strategy_definitions (name, description, code, enabled, create_mode)
+               VALUES (?, ?, ?, 1, 'builtin')""",
+            (DEFAULT_STRATEGY_NAME, DEFAULT_STRATEGY_DESCRIPTION, DEFAULT_STRATEGY_CODE),
+        )
     conn.commit()
     conn.close()
 
-def save_screening_run(run_date, run_time, total_stocks, matched_count, status, results):
+def save_screening_run(run_date, run_time, total_stocks, matched_count, status, results, target_info=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    target_info = target_info or {}
     
     # 先删除该 run_date+run_time 的旧数据（避免重复）
-    c.execute('DELETE FROM screening_results WHERE run_date = ? AND run_time = ?', (run_date, run_time))
-    c.execute('DELETE FROM screening_runs WHERE run_date = ? AND run_time = ?', (run_date, run_time))
+    if target_info.get("target_type") and target_info.get("target_id") is not None:
+        c.execute(
+            '''DELETE FROM screening_results
+               WHERE run_date = ? AND run_time = ? AND target_type = ? AND target_id = ?''',
+            (run_date, run_time, target_info.get("target_type"), target_info.get("target_id")),
+        )
+        c.execute(
+            '''DELETE FROM screening_runs
+               WHERE run_date = ? AND run_time = ? AND target_type = ? AND target_id = ?''',
+            (run_date, run_time, target_info.get("target_type"), target_info.get("target_id")),
+        )
+    else:
+        c.execute('DELETE FROM screening_results WHERE run_date = ? AND run_time = ?', (run_date, run_time))
+        c.execute('DELETE FROM screening_runs WHERE run_date = ? AND run_time = ?', (run_date, run_time))
     
     # 保存运行记录
-    c.execute('''INSERT INTO screening_runs (run_date, run_time, total_stocks, matched_count, status)
-                 VALUES (?, ?, ?, ?, ?)''',
-              (run_date, run_time, total_stocks, matched_count, status))
+    c.execute('''INSERT INTO screening_runs (run_date, run_time, total_stocks, matched_count, status, target_type, target_id, target_name, target_logic)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (
+                  run_date,
+                  run_time,
+                  total_stocks,
+                  matched_count,
+                  status,
+                  target_info.get("target_type"),
+                  target_info.get("target_id"),
+                  target_info.get("target_name"),
+                  target_info.get("target_logic"),
+              ))
     
     # 保存选股结果（去重）
     seen = set()
@@ -76,12 +173,26 @@ def save_screening_run(run_date, run_time, total_stocks, matched_count, status, 
             continue
         seen.add(code)
         c.execute('''INSERT INTO screening_results 
-                     (run_date, run_time, stock_code, stock_name, daily_condition, weekly_condition, current_volume, max_volume_3m, dif, dea)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                  (run_date, run_time, code, r.get('name', ''), 
-                   r.get('daily', ''), r.get('weekly', ''),
-                   r.get('current_vol', 0), r.get('max_vol_3m', 0),
-                   r.get('dif', 0), r.get('dea', 0)))
+                     (run_date, run_time, stock_code, stock_name, daily_condition, weekly_condition, current_volume, max_volume_3m, dif, dea, target_type, target_id, target_name, matched_strategies, result_payload, score)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                  (
+                      run_date,
+                      run_time,
+                      code,
+                      r.get('name', ''),
+                      r.get('daily', ''),
+                      r.get('weekly', ''),
+                      r.get('current_vol', 0),
+                      r.get('max_vol_3m', 0),
+                      r.get('dif', 0),
+                      r.get('dea', 0),
+                      target_info.get("target_type"),
+                      target_info.get("target_id"),
+                      target_info.get("target_name"),
+                      ", ".join(r.get("matched_strategies", [])),
+                      json.dumps(r.get("payload", {}), ensure_ascii=False),
+                      r.get("score", 0),
+                  ))
     
     conn.commit()
     conn.close()
@@ -126,6 +237,297 @@ def get_latest_screening_results():
     run_info = dict(latest)
     conn.close()
     return run_info, [dict(r) for r in results]
+
+
+def list_strategies(enabled_only=False):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    sql = "SELECT * FROM strategy_definitions"
+    params = []
+    if enabled_only:
+        sql += " WHERE enabled = 1"
+    sql += " ORDER BY id DESC"
+    rows = c.execute(sql, params).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_strategy(strategy_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    row = c.execute("SELECT * FROM strategy_definitions WHERE id = ?", (strategy_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_strategy(name, description, code, create_mode="direct", enabled=1):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO strategy_definitions (name, description, code, enabled, create_mode, updated_at)
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+        (name.strip(), description.strip(), code, 1 if enabled else 0, create_mode),
+    )
+    conn.commit()
+    strategy_id = c.lastrowid
+    conn.close()
+    return get_strategy(strategy_id)
+
+
+def update_strategy(strategy_id, name, description, code, enabled=1):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """UPDATE strategy_definitions
+           SET name = ?, description = ?, code = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?""",
+        (name.strip(), description.strip(), code, 1 if enabled else 0, strategy_id),
+    )
+    conn.commit()
+    changed = c.rowcount
+    conn.close()
+    return changed > 0
+
+
+def delete_strategy(strategy_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM strategy_group_items WHERE strategy_id = ?", (strategy_id,))
+    c.execute("DELETE FROM strategy_definitions WHERE id = ?", (strategy_id,))
+    conn.commit()
+    deleted = c.rowcount
+    conn.close()
+    return deleted > 0
+
+
+def list_strategy_groups():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    groups = c.execute("SELECT * FROM strategy_groups ORDER BY id DESC").fetchall()
+    result = []
+    for group in groups:
+        items = c.execute(
+            """SELECT s.id, s.name
+               FROM strategy_group_items gi
+               JOIN strategy_definitions s ON s.id = gi.strategy_id
+               WHERE gi.group_id = ?
+               ORDER BY gi.sort_order ASC, gi.id ASC""",
+            (group["id"],),
+        ).fetchall()
+        payload = dict(group)
+        payload["strategies"] = [dict(item) for item in items]
+        payload["strategy_ids"] = [item["id"] for item in items]
+        result.append(payload)
+    conn.close()
+    return result
+
+
+def get_strategy_group(group_id):
+    for group in list_strategy_groups():
+        if group["id"] == group_id:
+            return group
+    return None
+
+
+def create_strategy_group(name, description, match_mode, strategy_ids):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO strategy_groups (name, description, match_mode, updated_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)""",
+        (name.strip(), description.strip(), (match_mode or "AND").upper()),
+    )
+    group_id = c.lastrowid
+    for index, strategy_id in enumerate(strategy_ids):
+        c.execute(
+            "INSERT OR IGNORE INTO strategy_group_items (group_id, strategy_id, sort_order) VALUES (?, ?, ?)",
+            (group_id, strategy_id, index),
+        )
+    conn.commit()
+    conn.close()
+    return get_strategy_group(group_id)
+
+
+def update_strategy_group(group_id, name, description, match_mode, strategy_ids):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """UPDATE strategy_groups
+           SET name = ?, description = ?, match_mode = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?""",
+        (name.strip(), description.strip(), (match_mode or "AND").upper(), group_id),
+    )
+    c.execute("DELETE FROM strategy_group_items WHERE group_id = ?", (group_id,))
+    for index, strategy_id in enumerate(strategy_ids):
+        c.execute(
+            "INSERT OR IGNORE INTO strategy_group_items (group_id, strategy_id, sort_order) VALUES (?, ?, ?)",
+            (group_id, strategy_id, index),
+        )
+    conn.commit()
+    updated = c.rowcount
+    conn.close()
+    return updated >= 0
+
+
+def delete_strategy_group(group_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM strategy_group_items WHERE group_id = ?", (group_id,))
+    c.execute("DELETE FROM strategy_groups WHERE id = ?", (group_id,))
+    conn.commit()
+    deleted = c.rowcount
+    conn.close()
+    return deleted > 0
+
+
+def get_target_options():
+    return {
+        "strategies": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "description": item.get("description", ""),
+                "enabled": item.get("enabled", 1),
+                "create_mode": item.get("create_mode", "direct"),
+            }
+            for item in list_strategies()
+        ],
+        "groups": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "description": item.get("description", ""),
+                "match_mode": item.get("match_mode", "AND"),
+                "strategy_ids": item.get("strategy_ids", []),
+                "strategy_names": [strategy["name"] for strategy in item.get("strategies", [])],
+            }
+            for item in list_strategy_groups()
+        ],
+    }
+
+
+def is_mobile_user_agent(user_agent: str) -> bool:
+    ua = (user_agent or "").lower()
+    mobile_keywords = [
+        "iphone",
+        "android",
+        "mobile",
+        "ipad",
+        "ipod",
+        "windows phone",
+        "opera mini",
+        "blackberry",
+    ]
+    return any(keyword in ua for keyword in mobile_keywords)
+
+
+def resolve_screening_target(target_type=None, target_id=None):
+    target_type = target_type or "strategy"
+    if target_type == "group":
+        group = get_strategy_group(int(target_id)) if target_id else None
+        if not group:
+            groups = list_strategy_groups()
+            group = groups[0] if groups else None
+        if not group:
+            return None
+        strategies = [get_strategy(strategy_id) for strategy_id in group.get("strategy_ids", [])]
+        strategies = [item for item in strategies if item and item.get("enabled", 1)]
+        if not strategies:
+            return None
+        return {
+            "target_type": "group",
+            "target_id": group["id"],
+            "target_name": group["name"],
+            "target_logic": group.get("match_mode", "AND").upper(),
+            "strategies": strategies,
+        }
+    strategy = get_strategy(int(target_id)) if target_id else None
+    if strategy and not strategy.get("enabled", 1):
+        strategy = None
+    if not strategy:
+        strategy_list = list_strategies(enabled_only=True)
+        strategy = strategy_list[0] if strategy_list else None
+    if not strategy:
+        return None
+    return {
+        "target_type": "strategy",
+        "target_id": strategy["id"],
+        "target_name": strategy["name"],
+        "target_logic": "SINGLE",
+        "strategies": [strategy],
+    }
+
+
+def generate_strategy_code(prompt_text: str):
+    api_key = (
+        os.getenv("MINIMAX_API_KEY")
+        or os.getenv("LLM_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
+    if not api_key:
+        raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
+    base_url = (
+        os.getenv("MINIMAX_API_BASE")
+        or os.getenv("LLM_API_BASE")
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("OPENAI_API_BASE")
+        or "https://api.openai.com/v1"
+    ).rstrip("/")
+    model = (
+        os.getenv("MINIMAX_MODEL")
+        or os.getenv("LLM_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or "MiniMax-M2.5"
+    )
+    contract = get_strategy_contract()
+    system_prompt = (
+        "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
+        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>、分析过程或任何额外文本。"
+        "必须定义 run_strategy(context) 函数。"
+        "返回 dict，包含 pass(bool)、reason(str)，可选 score、metrics。"
+        "context 是嵌套 dict，必须使用 context['stock']['code']、context['snapshots']['daily']、context['indicators']['daily']['macd']['dif'] 这类访问方式。"
+        "不要使用 context.get('stock.code') 这种点路径写法。"
+    )
+    user_prompt = (
+        f"策略说明：{prompt_text}\n\n"
+        f"可用输入：{json.dumps(contract['inputs'], ensure_ascii=False)}\n"
+        f"输出约定：{json.dumps(contract['output'], ensure_ascii=False)}\n"
+        "补充约束：\n"
+        "1. 如果数据不足，直接返回 pass=False 和明确原因。\n"
+        "2. 优先使用 context['snapshots'] 和 context['indicators'] 中已有字段。\n"
+        "3. 访问嵌套字段时使用字典下标，不要把 key 拼成 'a.b'。\n"
+        "4. 最终只返回完整 Python 代码。\n"
+    )
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+    }
+    with httpx.Client(timeout=90) as client:
+        response = client.post(
+            f"{base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+    content = data["choices"][0]["message"]["content"].strip()
+    if "<think>" in content and "</think>" in content:
+        content = content.split("</think>", 1)[1].strip()
+    if content.startswith("```"):
+        content = content.strip("`")
+        if content.startswith("python"):
+            content = content[6:].lstrip()
+    return content
 
 # ========== 虚拟炒股模块 ==========
 
@@ -540,7 +942,11 @@ SCREENING_RESULT = {
     "processed": 0,
     "matched_count": 0,
     "results": [],
-    "running": False
+    "running": False,
+    "target_type": "",
+    "target_id": None,
+    "target_name": "",
+    "error": "",
 }
 
 # ========== 选股模块 ==========
@@ -682,52 +1088,106 @@ def check_weekly_criteria(klines: list) -> dict:
     
     return result
 
-def screen_stock(code: str, name: str) -> dict:
-    """筛选单只股票（同步版本）"""
-    result = {"code": code, "name": name, "pass": False, "daily": "", "weekly": "", "current_vol": 0, "dif": 0, "dea": 0}
-    
+def screen_stock(code: str, name: str, target_info: dict) -> dict:
+    """按策略或策略组筛选单只股票（同步版本）"""
+    result = {
+        "code": code,
+        "name": name,
+        "pass": False,
+        "daily": "",
+        "weekly": "",
+        "reason": "",
+        "matched_strategies": [],
+        "current_vol": 0,
+        "max_vol_3m": 0,
+        "dif": 0,
+        "dea": 0,
+        "score": 0,
+        "payload": {},
+    }
+
     try:
         if code.startswith("6"):
             symbol = f"sh{code}"
         elif code.startswith("0") or code.startswith("3"):
             symbol = f"sz{code}"
         else:
+            result["reason"] = "不支持的股票代码"
             return result
-        
-        daily_klines = get_kline_daily(symbol, 90)
-        if daily_klines:
-            d = check_daily_criteria(daily_klines)
-            result["daily"] = d["reason"]
-            result["current_vol"] = d.get("current_vol", 0)
-            result["dif"] = d.get("dif", 0)
-            result["dea"] = d.get("dea", 0)
-        
+
+        daily_klines = get_kline_daily(symbol, 180)
         weekly_klines = get_kline_weekly(symbol)
-        if weekly_klines:
-            w = check_weekly_criteria(weekly_klines)
-            result["weekly"] = w["reason"]
-        
-        daily_pass = "MACD零轴上" in result["daily"] and "成交额3月新高" in result["daily"]
-        weekly_pass = "周线" in result["weekly"] and "根红柱" in result["weekly"]
-        result["pass"] = daily_pass and weekly_pass
-        
+        context = build_strategy_context({"code": code, "name": name, "symbol": symbol}, daily_klines, weekly_klines)
+
+        strategy_results = []
+        for strategy in target_info.get("strategies", []):
+            strategy_result = run_strategy_code(strategy["code"], context)
+            strategy_result["strategy_id"] = strategy["id"]
+            strategy_result["strategy_name"] = strategy["name"]
+            strategy_results.append(strategy_result)
+
+        if not strategy_results:
+            result["reason"] = "没有可用策略"
+            return result
+
+        if target_info.get("target_type") == "group":
+            match_mode = target_info.get("target_logic", "AND").upper()
+            passed = all(item["pass"] for item in strategy_results) if match_mode == "AND" else any(item["pass"] for item in strategy_results)
+        else:
+            passed = strategy_results[0]["pass"]
+
+        matched_names = [item["strategy_name"] for item in strategy_results if item["pass"]]
+        failed_reasons = [f"{item['strategy_name']}: {item.get('reason', '')}" for item in strategy_results if not item["pass"]]
+        pass_reasons = [f"{item['strategy_name']}: {item.get('reason', '')}" for item in strategy_results if item["pass"]]
+
+        daily_snapshot = context["snapshots"]["daily"]
+        result["current_vol"] = daily_snapshot.get("current_volume", 0)
+        result["max_vol_3m"] = daily_snapshot.get("max_volume_3m", 0)
+        result["dif"] = round(daily_snapshot.get("latest_dif", 0), 4)
+        result["dea"] = round(daily_snapshot.get("latest_dea", 0), 4)
+        result["pass"] = passed
+        result["matched_strategies"] = matched_names
+        result["daily"] = "、".join(matched_names) if matched_names else "未命中策略"
+        result["weekly"] = " | ".join(pass_reasons if passed else failed_reasons[:3])
+        result["reason"] = result["weekly"]
+        result["score"] = max([item.get("score", 0) for item in strategy_results] + [0])
+        result["payload"] = {
+            "target": {
+                "type": target_info.get("target_type"),
+                "id": target_info.get("target_id"),
+                "name": target_info.get("target_name"),
+                "logic": target_info.get("target_logic"),
+            },
+            "strategy_results": strategy_results,
+            "snapshots": context["snapshots"],
+        }
+
     except Exception as e:
         result["error"] = str(e)
-    
+        result["reason"] = str(e)
+
     return result
 
-def run_screening_sync():
+def run_screening_sync(target_type="strategy", target_id=None):
     """执行完整选股筛选（同步版本，在后台线程运行）"""
     global SCREENING_RESULT
     SCREENING_RESULT["running"] = True
     SCREENING_RESULT["processed"] = 0
-    
+    target_info = resolve_screening_target(target_type, target_id)
+    if not target_info:
+        SCREENING_RESULT["running"] = False
+        SCREENING_RESULT["error"] = "未找到可执行的策略或策略组"
+        return
+
     now = datetime.now()
     run_date = now.strftime("%Y-%m-%d")
     run_time = now.strftime("%H:%M:%S")
     SCREENING_RESULT["time"] = f"{run_date} {run_time}"
-    
-    print(f"[{run_time}] 开始选股筛选（全部A股）...")
+    SCREENING_RESULT["target_type"] = target_info["target_type"]
+    SCREENING_RESULT["target_id"] = target_info["target_id"]
+    SCREENING_RESULT["target_name"] = target_info["target_name"]
+
+    print(f"[{run_time}] 开始选股筛选（{target_info['target_name']}）...")
     
     stocks = get_all_stocks()
     SCREENING_RESULT["total_stocks"] = len(stocks)
@@ -739,25 +1199,52 @@ def run_screening_sync():
     if total == 0:
         SCREENING_RESULT["running"] = False
         return
-    
-    # 逐只处理
-    for i, stock in enumerate(stocks):
-        r = screen_stock(stock["code"], stock["name"])
-        if r.get("pass"):
-            results.append(r)
-            # 每找到一只就立即保存到数据库
-            save_screening_run(run_date, run_time, total, len(results), "running", results)
-        
-        SCREENING_RESULT["processed"] = i + 1
-        SCREENING_RESULT["matched_count"] = len(results)
-        
-        if (i + 1) % 100 == 0 or i + 1 >= total:
-            print(f"  进度: {i+1}/{total} ({(i+1)*100//total}%)，符合条件: {len(results)} 只")
+
+    save_counter = 0
+    batch_size = min(SCREENING_SUBMIT_BATCH, total)
+    max_workers = min(SCREENING_MAX_WORKERS, total)
+    print(f"并发配置: workers={max_workers}, submit_batch={batch_size}, save_interval={SCREENING_SAVE_INTERVAL}")
+
+    for start in range(0, total, batch_size):
+        stock_batch = stocks[start:start + batch_size]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(screen_stock, stock["code"], stock["name"], target_info): stock
+                for stock in stock_batch
+            }
+
+            for future in as_completed(future_map):
+                stock = future_map[future]
+                try:
+                    r = future.result()
+                except Exception as exc:
+                    r = {
+                        "code": stock["code"],
+                        "name": stock["name"],
+                        "pass": False,
+                        "reason": str(exc),
+                        "error": str(exc),
+                    }
+
+                if r.get("pass"):
+                    results.append(r)
+                    save_counter += 1
+
+                SCREENING_RESULT["processed"] += 1
+                SCREENING_RESULT["matched_count"] = len(results)
+
+                if save_counter >= SCREENING_SAVE_INTERVAL:
+                    save_screening_run(run_date, run_time, total, len(results), "running", results, target_info=target_info)
+                    save_counter = 0
+
+                processed = SCREENING_RESULT["processed"]
+                if processed % 100 == 0 or processed >= total:
+                    print(f"  进度: {processed}/{total} ({processed*100//total}%)，符合条件: {len(results)} 只")
     
     results.sort(key=lambda x: x.get("current_vol", 0), reverse=True)
     
     # 保存最终结果
-    save_screening_run(run_date, run_time, total, len(results), "completed", results)
+    save_screening_run(run_date, run_time, total, len(results), "completed", results, target_info=target_info)
     
     SCREENING_RESULT["matched_count"] = len(results)
     SCREENING_RESULT["results"] = results[:200]
@@ -1244,28 +1731,172 @@ async def search_stock(keyword: str):
 # ========== 选股 API ==========
 
 @app.get("/screener", response_class=HTMLResponse)
-async def screener_page():
+async def screener_page(request: Request):
     """选股结果页面"""
-    with open("templates/screener.html", "r", encoding="utf-8") as f:
+    user_agent = request.headers.get("user-agent", "")
+    template_name = "templates/screener_mobile.html" if is_mobile_user_agent(user_agent) else "templates/screener.html"
+    with open(template_name, "r", encoding="utf-8") as f:
         content = f.read()
     return HTMLResponse(content=content, status_code=200)
 
 
+@app.get("/strategies", response_class=HTMLResponse)
+async def strategies_page(request: Request):
+    """策略管理页面"""
+    user_agent = request.headers.get("user-agent", "")
+    template_name = "templates/strategies_mobile.html" if is_mobile_user_agent(user_agent) else "templates/strategies.html"
+    with open(template_name, "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content, status_code=200)
+
+
+@app.get("/api/strategy/contract")
+async def strategy_contract():
+    return get_strategy_contract()
+
+
+@app.get("/api/strategies")
+async def get_strategy_list():
+    return {
+        "strategies": list_strategies(),
+        "groups": list_strategy_groups(),
+    }
+
+
+@app.post("/api/strategies")
+async def create_strategy_api(request: Request):
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    code = (payload.get("code") or "").strip()
+    create_mode = (payload.get("create_mode") or "direct").strip()
+    enabled = bool(payload.get("enabled", True))
+    if not name or not code:
+        return JSONResponse({"ok": False, "error": "策略名称和代码不能为空"}, status_code=400)
+    try:
+        test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
+        validation = run_strategy_code(code, test_context)
+        if validation.get("error") and "未定义 run_strategy" in validation.get("reason", ""):
+            return JSONResponse({"ok": False, "error": validation["reason"]}, status_code=400)
+        strategy = create_strategy(name, description, code, create_mode=create_mode, enabled=enabled)
+        return {"ok": True, "strategy": strategy}
+    except sqlite3.IntegrityError:
+        return JSONResponse({"ok": False, "error": "策略名称已存在"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.put("/api/strategies/{strategy_id}")
+async def update_strategy_api(strategy_id: int, request: Request):
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    code = (payload.get("code") or "").strip()
+    enabled = bool(payload.get("enabled", True))
+    if not name or not code:
+        return JSONResponse({"ok": False, "error": "策略名称和代码不能为空"}, status_code=400)
+    try:
+        ok = update_strategy(strategy_id, name, description, code, enabled=enabled)
+        if not ok:
+            return JSONResponse({"ok": False, "error": "策略不存在"}, status_code=404)
+        return {"ok": True, "strategy": get_strategy(strategy_id)}
+    except sqlite3.IntegrityError:
+        return JSONResponse({"ok": False, "error": "策略名称已存在"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.delete("/api/strategies/{strategy_id}")
+async def delete_strategy_api(strategy_id: int):
+    if not delete_strategy(strategy_id):
+        return JSONResponse({"ok": False, "error": "策略不存在"}, status_code=404)
+    return {"ok": True}
+
+
+@app.post("/api/strategy-groups")
+async def create_strategy_group_api(request: Request):
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    match_mode = (payload.get("match_mode") or "AND").upper()
+    strategy_ids = [int(item) for item in payload.get("strategy_ids", [])]
+    if not name:
+        return JSONResponse({"ok": False, "error": "策略组名称不能为空"}, status_code=400)
+    if not strategy_ids:
+        return JSONResponse({"ok": False, "error": "策略组至少选择一个策略"}, status_code=400)
+    try:
+        group = create_strategy_group(name, description, match_mode, strategy_ids)
+        return {"ok": True, "group": group}
+    except sqlite3.IntegrityError:
+        return JSONResponse({"ok": False, "error": "策略组名称已存在"}, status_code=400)
+
+
+@app.put("/api/strategy-groups/{group_id}")
+async def update_strategy_group_api(group_id: int, request: Request):
+    payload = await request.json()
+    name = (payload.get("name") or "").strip()
+    description = (payload.get("description") or "").strip()
+    match_mode = (payload.get("match_mode") or "AND").upper()
+    strategy_ids = [int(item) for item in payload.get("strategy_ids", [])]
+    if not name:
+        return JSONResponse({"ok": False, "error": "策略组名称不能为空"}, status_code=400)
+    if not strategy_ids:
+        return JSONResponse({"ok": False, "error": "策略组至少选择一个策略"}, status_code=400)
+    try:
+        update_strategy_group(group_id, name, description, match_mode, strategy_ids)
+        return {"ok": True, "group": get_strategy_group(group_id)}
+    except sqlite3.IntegrityError:
+        return JSONResponse({"ok": False, "error": "策略组名称已存在"}, status_code=400)
+
+
+@app.delete("/api/strategy-groups/{group_id}")
+async def delete_strategy_group_api(group_id: int):
+    if not delete_strategy_group(group_id):
+        return JSONResponse({"ok": False, "error": "策略组不存在"}, status_code=404)
+    return {"ok": True}
+
+
+@app.post("/api/strategies/generate-code")
+async def generate_strategy_api(request: Request):
+    payload = await request.json()
+    prompt_text = (payload.get("prompt") or "").strip()
+    if not prompt_text:
+        return JSONResponse({"ok": False, "error": "请输入策略描述"}, status_code=400)
+    try:
+        code = generate_strategy_code(prompt_text)
+        return {"ok": True, "code": code}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.get("/api/screener/targets")
+async def screener_targets():
+    return get_target_options()
+
+
 @app.get("/api/screener/run")
-async def run_screener():
+async def run_screener(target_type: str = "strategy", target_id: Optional[int] = None):
     """手动触发选股（扫描全部A股）"""
     if SCREENING_RESULT["running"]:
         return {"status": "running", "message": "选股任务正在执行中..."}
-    
-    # 在后台线程中运行（避免阻塞事件循环）
-    import threading
-    t = threading.Thread(target=run_screening_sync, daemon=True)
+
+    resolved = resolve_screening_target(target_type, target_id)
+    if not resolved:
+        return JSONResponse({"status": "error", "message": "没有可执行的策略或策略组"}, status_code=400)
+
+    t = threading.Thread(target=run_screening_sync, kwargs={"target_type": target_type, "target_id": target_id}, daemon=True)
     t.start()
-    return {"status": "started", "message": "选股任务已启动，全部A股扫描，预计3-5分钟完成"}
+    return {
+        "status": "started",
+        "message": f"选股任务已启动，目标：{resolved['target_name']}",
+        "target_type": resolved["target_type"],
+        "target_id": resolved["target_id"],
+        "target_name": resolved["target_name"],
+    }
 
 
 @app.get("/api/screener/status")
-async def screener_status():
+async def screener_status(target_type: Optional[str] = None, target_id: Optional[int] = None):
     """查询选股状态"""
     if SCREENING_RESULT["running"]:
         return {
@@ -1273,164 +1904,195 @@ async def screener_status():
             "time": SCREENING_RESULT["time"],
             "total_stocks": SCREENING_RESULT["total_stocks"],
             "processed": SCREENING_RESULT["processed"],
-            "matched_count": SCREENING_RESULT["matched_count"]
+            "matched_count": SCREENING_RESULT["matched_count"],
+            "target_type": SCREENING_RESULT.get("target_type"),
+            "target_id": SCREENING_RESULT.get("target_id"),
+            "target_name": SCREENING_RESULT.get("target_name"),
+            "error": SCREENING_RESULT.get("error", ""),
         }
-    
-    # 从数据库获取最新结果
-    run_info, results = get_latest_screening_results()
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    sql = "SELECT * FROM screening_runs WHERE 1 = 1"
+    params = []
+    if target_type:
+        sql += " AND target_type = ?"
+        params.append(target_type)
+    if target_id is not None:
+        sql += " AND target_id = ?"
+        params.append(target_id)
+    sql += " ORDER BY created_at DESC LIMIT 1"
+    run_info = c.execute(sql, params).fetchone()
+    conn.close()
     if run_info:
+        run_info = dict(run_info)
         return {
             "running": False,
             "time": f"{run_info['run_date']} {run_info['run_time']}",
             "total_stocks": run_info.get('total_stocks', 0),
             "processed": run_info.get('total_stocks', 0),
-            "matched_count": run_info.get('matched_count', 0)
+            "matched_count": run_info.get('matched_count', 0),
+            "target_type": run_info.get("target_type"),
+            "target_id": run_info.get("target_id"),
+            "target_name": run_info.get("target_name"),
+            "status": run_info.get("status"),
         }
-    
+
     return {
         "running": False,
         "time": "",
         "total_stocks": 0,
         "processed": 0,
-        "matched_count": 0
+        "matched_count": 0,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_name": "",
     }
 
 
 @app.get("/api/screener/results")
-async def get_screener_results():
-    """获取选股结果（从数据库，按当天最新扫描去重）"""
-    today = datetime.now().strftime("%Y-%m-%d")
-    
+async def get_screener_results(target_type: Optional[str] = None, target_id: Optional[int] = None):
+    """获取选股结果"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    
-    # 获取当天最新一次扫描的 run_time
-    latest = c.execute('''SELECT run_date, run_time, total_stocks, matched_count FROM screening_runs 
-                          WHERE run_date = ? AND status = 'completed'
-                          ORDER BY created_at DESC LIMIT 1''', (today,)).fetchone()
-    
+    sql = "SELECT * FROM screening_runs WHERE status = 'completed'"
+    params = []
+    if target_type:
+        sql += " AND target_type = ?"
+        params.append(target_type)
+    if target_id is not None:
+        sql += " AND target_id = ?"
+        params.append(target_id)
+    sql += " ORDER BY created_at DESC LIMIT 1"
+    latest = c.execute(sql, params).fetchone()
+
     if not latest:
         conn.close()
         return {"results": [], "time": "", "total": 0, "matched_count": 0}
-    
+
     run_date = latest['run_date']
     run_time = latest['run_time']
-    
-    # 获取该次扫描的不重复结果
-    rows = c.execute('''SELECT * FROM screening_results 
-                           WHERE run_date = ? AND run_time = ?
-                           ORDER BY current_volume DESC''', (run_date, run_time)).fetchall()
-    
+    rows = c.execute(
+        '''SELECT * FROM screening_results
+           WHERE run_date = ? AND run_time = ?
+           ORDER BY score DESC, current_volume DESC''',
+        (run_date, run_time),
+    ).fetchall()
+
     results = []
     for r in rows:
+        payload = {}
+        if r["result_payload"]:
+            try:
+                payload = json.loads(r["result_payload"])
+            except Exception:
+                payload = {}
         results.append({
             "code": r['stock_code'],
             "name": r['stock_name'],
             "daily": r['daily_condition'],
             "weekly": r['weekly_condition'],
+            "reason": r['weekly_condition'],
             "current_vol": r['current_volume'],
             "dif": r['dif'],
-            "dea": r['dea']
+            "dea": r['dea'],
+            "score": r['score'] or 0,
+            "matched_strategies": [item.strip() for item in (r["matched_strategies"] or "").split(",") if item.strip()],
+            "payload": payload,
         })
-    
+
     conn.close()
-    
+
     return {
         "time": f"{run_date} {run_time}",
         "total": len(results),
         "matched_count": len(results),
-        "results": results
+        "target_type": latest["target_type"],
+        "target_id": latest["target_id"],
+        "target_name": latest["target_name"],
+        "results": results,
     }
 
 
 @app.get("/api/screener/history")
-async def get_screener_history():
-    """按日期聚合的历史选股记录"""
+async def get_screener_history(target_type: Optional[str] = None, target_id: Optional[int] = None):
+    """获取历史选股记录"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    
-    # 按日期聚合
-    rows = c.execute('''SELECT run_date, 
-                                COUNT(*) as run_count,
-                                SUM(matched_count) as total_stocks,
-                                MAX(run_time) as last_run_time
-                         FROM screening_runs 
-                         WHERE status = 'completed'
-                         GROUP BY run_date 
-                         ORDER BY run_date DESC 
-                         LIMIT 30''').fetchall()
-    
+    sql = "SELECT * FROM screening_runs WHERE status = 'completed'"
+    params = []
+    if target_type:
+        sql += " AND target_type = ?"
+        params.append(target_type)
+    if target_id is not None:
+        sql += " AND target_id = ?"
+        params.append(target_id)
+    sql += " ORDER BY created_at DESC LIMIT 30"
+    rows = c.execute(sql, params).fetchall()
+
     history = []
     for r in rows:
         history.append({
             "run_date": r['run_date'],
-            "run_count": r['run_count'],
+            "run_time": r['run_time'],
+            "target_type": r['target_type'],
+            "target_id": r['target_id'],
+            "target_name": r['target_name'],
+            "target_logic": r['target_logic'],
             "total_stocks": r['total_stocks'],
-            "last_run_time": r['last_run_time']
+            "matched_count": r['matched_count'],
+            "status": r['status'],
         })
-    
+
     conn.close()
     return {"history": history}
 
-@app.get("/api/screener/history/{run_date}")
-async def get_date_stocks(run_date: str):
-    """获取某一天的所有选股结果"""
+
+@app.get("/api/screener/history/{run_date}/{run_time}")
+async def get_history_detail(run_date: str, run_time: str, target_type: Optional[str] = None, target_id: Optional[int] = None):
+    """获取某次选股的具体结果"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    
-    # 获取该日期所有不重复的股票（按当天最新一次扫描结果）
-    rows = c.execute('''SELECT sr.* FROM screening_results sr
-                        INNER JOIN (
-                            SELECT stock_code, MAX(run_time) as max_time
-                            FROM screening_results 
-                            WHERE run_date = ?
-                            GROUP BY stock_code
-                        ) latest ON sr.stock_code = latest.stock_code AND sr.run_time = latest.max_time
-                        WHERE sr.run_date = ?
-                        ORDER BY sr.current_volume DESC''', (run_date, run_date)).fetchall()
-    
-    results = []
-    for r in rows:
-        results.append({
-            "code": r['stock_code'],
-            "name": r['stock_name'],
-            "daily": r['daily_condition'],
-            "weekly": r['weekly_condition'],
-            "current_vol": r['current_volume'],
-            "dif": r['dif'],
-            "dea": r['dea'],
-            "run_time": r['run_time']
-        })
-    
+    sql = "SELECT * FROM screening_results WHERE run_date = ? AND run_time = ?"
+    params = [run_date, run_time]
+    if target_type:
+        sql += " AND target_type = ?"
+        params.append(target_type)
+    if target_id is not None:
+        sql += " AND target_id = ?"
+        params.append(target_id)
+    sql += " ORDER BY score DESC, current_volume DESC"
+    rows = c.execute(sql, params).fetchall()
     conn.close()
-    return {
-        "run_date": run_date,
-        "total": len(results),
-        "results": results
-    }
-
-
-@app.get("/api/screener/history/{run_date}/{run_time}")
-async def get_history_detail(run_date: str, run_time: str):
-    """获取某次选股的具体结果"""
-    results = get_screening_results_by_run(run_date, run_time)
+    results = []
+    for row in rows:
+        item = dict(row)
+        if item.get("result_payload"):
+            try:
+                item["result_payload"] = json.loads(item["result_payload"])
+            except Exception:
+                pass
+        results.append(item)
     return {
         "run_date": run_date,
         "run_time": run_time,
         "total": len(results),
-        "results": results
+        "results": results,
     }
 
 
 # ========== 虚拟炒股 API ==========
 
-@app.get("/vt")
-async def vt_page():
+@app.get("/vt", response_class=HTMLResponse)
+async def vt_page(request: Request):
     """虚拟炒股主页"""
-    with open("templates/vt.html", "r", encoding="utf-8") as f:
+    user_agent = request.headers.get("user-agent", "")
+    template_name = "templates/vt_mobile.html" if is_mobile_user_agent(user_agent) else "templates/vt.html"
+    with open(template_name, "r", encoding="utf-8") as f:
         content = f.read()
     return HTMLResponse(content=content, status_code=200)
 

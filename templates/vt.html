@@ -10,7 +10,7 @@
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
         
         h1 { text-align: center; color: #e94560; font-size: 22px; margin: 16px 0; }
-        .tab-bar { display: flex; gap: 8px; margin-bottom: 16px; background: #16213e; border-radius: 10px; padding: 6px; }
+        .tab-bar { display: flex; gap: 8px; margin-bottom: 16px; background: #16213e; border-radius: 10px; padding: 6px; flex-wrap: wrap; }
         .tab { flex: 1; text-align: center; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #888; transition: all 0.2s; }
         .tab.active { background: #e94560; color: #fff; font-weight: bold; }
         
@@ -64,7 +64,7 @@
         .pos-detail span { text-align: center; }
         .pos-detail .val { color: #fff; font-size: 13px; margin-top: 2px; }
         
-        .trade-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #0f3460; font-size: 13px; }
+        .trade-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #0f3460; font-size: 13px; gap: 10px; }
         .trade-item:last-child { border-bottom: none; }
         .trade-type { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
         .trade-type.buy { background: #ff4d4d; color: #fff; }
@@ -89,6 +89,39 @@
         .success-msg { background: #26de81; color: #1a1a2e; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; }
         
         a { color: #e94560; text-decoration: none; }
+        .user-bar-main { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+        .user-bar-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .trade-switch { display:flex; gap:8px; margin-bottom:12px; }
+        .admin-tabs { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+        @media (max-width: 720px) {
+            .container { padding: 12px; }
+            h1 { font-size: 20px; margin: 12px 0; }
+            .card, .trade-panel { padding: 14px; }
+            .summary-grid, .trade-inputs { grid-template-columns: 1fr; }
+            .tab-bar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .tab { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+            .user-bar-actions { width: 100%; }
+            .user-bar-actions .btn { flex: 1 1 calc(50% - 8px); min-width: 0; }
+            .account-selector { margin-bottom: 4px; }
+            .pos-header, .trade-item, .admin-user-header { align-items: flex-start; flex-wrap: wrap; }
+            .pos-detail { grid-template-columns: 1fr 1fr; }
+            .trade-switch { display: grid; grid-template-columns: 1fr 1fr; }
+            .modal { padding: 18px; }
+        }
+        @media (max-width: 480px) {
+            .container { padding: 10px; }
+            .card, .trade-panel { padding: 12px; }
+            .summary-grid { gap: 10px; }
+            .tab-bar { grid-template-columns: 1fr; }
+            .user-bar-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+            .user-bar-actions .btn { width: 100%; }
+            .pos-detail { grid-template-columns: 1fr; }
+            .trade-switch, .modal-btns, .admin-tabs { grid-template-columns: 1fr; }
+            .trade-switch, .admin-tabs { display: grid; }
+            .modal-btns { flex-direction: column; }
+            .modal-btns .btn { width: 100%; }
+            .admin-account-item { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+        }
     </style>
 </head>
 <body>
@@ -96,14 +129,15 @@
         <h1>🎯 虚拟炒股系统</h1>
         
         <div id="userBar" class="card" style="display:none">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div class="user-bar-main">
                 <div>
                     <span id="userName" style="font-weight:bold; font-size:15px;"></span>
                     <span id="adminBadge" style="background:#e94560; color:#fff; padding:2px 6px; border-radius:4px; font-size:11px; margin-left:4px; display:none;">管理员</span>
                 </div>
-                <div style="display:flex; gap:8px; align-items:center;">
+                <div class="user-bar-actions">
                     <a href="/" class="btn btn-small" style="background:#0f3460;">📈 股票分析</a>
-                    <a href="/screener" class="btn btn-small" style="background:#0f3460;">📈 每日推荐</a>
+                    <a href="/screener" class="btn btn-small" style="background:#0f3460;">📈 策略选股</a>
+                    <a href="/strategies" class="btn btn-small" style="background:#0f3460;">🧠 策略管理</a>
                     <button class="btn btn-small" style="background:#555;" onclick="logout()">退出</button>
                 </div>
             </div>
@@ -166,7 +200,7 @@
                         <div class="trade-stock-code" id="tradeStockCode">-</div>
                         <div class="trade-stock-price" id="tradeStockPrice">-</div>
                     </div>
-                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                    <div class="trade-switch">
                         <button class="btn btn-green" id="buyBtn" onclick="showBuy()" style="flex:1;">买入</button>
                         <button class="btn" id="sellBtn" onclick="showSell()" style="flex:1; background:#0f3460;">卖出</button>
                     </div>
@@ -183,7 +217,7 @@
             </div>
             
             <div id="adminPanel" class="panel">
-                <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;">
+                <div class="admin-tabs">
                     <button class="btn btn-small" style="background:#0f3460;" onclick="showAdminTab('users')" id="adminTabUsers">👥 用户列表</button>
                     <button class="btn btn-small" onclick="showAdminTab('accounts')" id="adminTabAccounts">💼 账户管理</button>
                 </div>

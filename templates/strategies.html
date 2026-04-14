@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>策略管理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1523; color: #edf3ff; padding: 16px; }
+        .container { max-width: 1180px; margin: 0 auto; }
+        h1 { color: #ffd166; font-size: 28px; margin-bottom: 14px; }
+        .desc { color: #90a6c8; line-height: 1.7; margin-bottom: 18px; }
+        .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 16px; }
+        .card { background: linear-gradient(180deg, #162135, #0f1726); border: 1px solid #24324a; border-radius: 16px; padding: 18px; margin-bottom: 16px; }
+        .card h2 { font-size: 18px; margin-bottom: 12px; }
+        .card h3 { font-size: 15px; margin-bottom: 10px; color: #ffd166; }
+        input, textarea, select { width: 100%; background: #0a1220; color: #edf3ff; border: 1px solid #2c3b55; border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 10px; }
+        textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn { border: none; border-radius: 10px; padding: 10px 14px; font-size: 14px; cursor: pointer; }
+        .btn:disabled { opacity: 0.7; cursor: wait; }
+        .btn.primary { background: #ffd166; color: #271800; }
+        .btn.secondary { background: #23324a; color: #dbe6f9; }
+        .btn.green { background: #33c481; color: #081910; }
+        .btn.danger { background: #ef476f; color: #fff; }
+        .list { display: grid; gap: 10px; }
+        .item { background: #0b1321; border: 1px solid #223049; border-radius: 12px; padding: 14px; }
+        .row { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .name { font-weight: 700; font-size: 16px; }
+        .small { color: #8ba0c0; font-size: 12px; line-height: 1.6; }
+        .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #20304a; color: #9ed4ff; font-size: 12px; margin-right: 6px; margin-top: 8px; }
+        .muted { color: #90a6c8; font-size: 13px; line-height: 1.6; }
+        .hint { color: #7f94b3; font-size: 12px; margin-bottom: 10px; }
+        .generate-status { display: none; align-items: center; gap: 10px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(11, 19, 33, 0.92); border: 1px solid #294260; color: #b8d8ff; font-size: 13px; line-height: 1.6; }
+        .generate-status.show { display: flex; }
+        .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(184, 216, 255, 0.22); border-top-color: #9ed4ff; animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+        .editor-loading-mask { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(6, 12, 21, 0.72); backdrop-filter: blur(6px); border-radius: inherit; z-index: 5; }
+        .editor-loading-mask.show { display: flex; }
+        .editor-loading-card { min-width: min(100%, 320px); display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(13, 21, 35, 0.96); border: 1px solid #314a69; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28); color: #dbeafe; }
+        .editor-loading-card .spinner { width: 20px; height: 20px; border-width: 3px; }
+        .editor-loading-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .editor-loading-desc { color: #9fb7db; font-size: 12px; line-height: 1.6; }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .checkbox-list { display: grid; gap: 8px; margin-bottom: 12px; }
+        .checkbox-item { display: flex; gap: 8px; align-items: center; background: #0b1321; padding: 10px; border-radius: 10px; }
+        .checkbox-item input { width: auto; margin: 0; }
+        .overlay { position: fixed; inset: 0; background: rgba(4, 10, 18, 0.72); backdrop-filter: blur(8px); z-index: 30; display: none; }
+        .overlay.show { display: block; }
+        .editor-card { position: relative; }
+        .editor-close { display: none; }
+        .mobile-hub { position: fixed; left: 12px; right: 12px; top: 50%; bottom: auto; transform: translateY(-50%); z-index: 60; display: none; pointer-events: none; }
+        .mobile-hub-card { background: linear-gradient(180deg, rgba(22, 33, 53, 0.98), rgba(15, 23, 38, 0.98)); border: 1px solid #31415d; border-radius: 20px; padding: 18px; box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35); pointer-events: auto; }
+        .mobile-hub-title { font-size: 18px; margin-bottom: 8px; }
+        .mobile-hub-desc { color: #90a6c8; font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
+        .mobile-hub-actions { display: grid; gap: 10px; }
+        .mobile-floating-trigger { display: none; }
+        .section-meta { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+        .pagination { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+        .pagination-info { color: #90a6c8; font-size: 12px; }
+        .pagination-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 720px) {
+            body { padding: 12px; }
+            h1 { font-size: 24px; }
+            .desc { font-size: 13px; }
+            .card { padding: 14px; border-radius: 14px; }
+            .row { align-items: flex-start; }
+            .btn-row { display: grid; grid-template-columns: 1fr 1fr; }
+            .btn, .btn-row a { width: 100%; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+            .checkbox-item { align-items: flex-start; }
+            .mobile-floating-trigger { position: fixed; right: 12px; bottom: 16px; z-index: 20; display: block; }
+            .mobile-floating-trigger .btn { width: auto; min-width: 120px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28); }
+            .editor-card { display: none; position: fixed; left: 12px; right: 12px; top: 12px; bottom: 12px; z-index: 70; overflow: auto; margin: 0; padding: 16px; border-radius: 20px; box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42); }
+            .editor-card.show { display: block; }
+            .editor-close { display: inline-flex; position: sticky; top: 0; margin-left: auto; margin-bottom: 10px; z-index: 2; }
+            .mobile-hub.show { display: block; pointer-events: auto; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 10px; }
+            h1 { font-size: 22px; }
+            .card { padding: 12px; }
+            .btn-row { grid-template-columns: 1fr; }
+            .item { padding: 12px; }
+            input, textarea, select { font-size: 16px; }
+            .editor-card { left: 8px; right: 8px; top: 8px; bottom: 8px; padding: 14px; }
+            .mobile-hub { left: 8px; right: 8px; }
+            .mobile-floating-trigger { right: 8px; bottom: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>策略管理</h1>
+        <div class="desc">这里可以维护策略列表、组合成策略组，并用两种方式新增策略：直接写代码，或者用文字描述调用项目里的大模型兼容 API 生成代码草稿。</div>
+
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>策略列表</h2>
+                    <div class="section-meta">
+                        <div id="strategySummary" class="muted">加载中...</div>
+                    </div>
+                    <div id="strategyList" class="list"><div class="muted">加载中...</div></div>
+                    <div id="strategyPagination" class="pagination" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2>策略组</h2>
+                    <div class="section-meta">
+                        <div id="groupSummary" class="muted">加载中...</div>
+                    </div>
+                    <div id="groupList" class="list"><div class="muted">加载中...</div></div>
+                    <div id="groupPagination" class="pagination" style="display:none;"></div>
+                </div>
+            </div>
+
+            <div class="desktop-editor-column">
+                <div class="card editor-card" id="strategyEditorCard">
+                    <div id="editorLoadingMask" class="editor-loading-mask" aria-hidden="true">
+                        <div class="editor-loading-card" role="status" aria-live="polite">
+                            <span class="spinner" aria-hidden="true"></span>
+                            <div>
+                                <div class="editor-loading-title">策略代码生成中</div>
+                                <div class="editor-loading-desc" id="editorLoadingText">LLM 正在处理你的描述，请稍候...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn secondary editor-close" type="button" onclick="closeEditorCard('strategyEditorCard')">关闭</button>
+                    <h2>新增/编辑策略</h2>
+                    <input type="hidden" id="strategyId" />
+                    <input id="strategyName" placeholder="策略名称" />
+                    <input id="strategyDesc" placeholder="策略描述" />
+                    <select id="strategyMode" onchange="switchStrategyMode()">
+                        <option value="direct">直接写代码</option>
+                        <option value="ai">文字生成代码</option>
+                    </select>
+                    <div id="aiPromptWrap" style="display:none;">
+                        <textarea id="strategyPrompt" placeholder="例如：找出最近20日站上 MA20，且日线 MACD 金叉，同时周线未出现 4 连阳的股票"></textarea>
+                        <div class="btn-row" style="margin-bottom:10px;">
+                            <button class="btn green" id="generateCodeBtn" onclick="generateCode()">生成代码</button>
+                        </div>
+                        <div id="generateStatus" class="generate-status" aria-live="polite">
+                            <span class="spinner" aria-hidden="true"></span>
+                            <span id="generateStatusText">正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 0 秒</span>
+                        </div>
+                    </div>
+                    <textarea id="strategyCode" style="min-height:260px;" placeholder="策略代码必须定义 run_strategy(context)"></textarea>
+                    <label class="small" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                        <input type="checkbox" id="strategyEnabled" checked style="width:auto; margin:0;" />
+                        启用该策略
+                    </label>
+                    <div class="btn-row">
+                        <button class="btn primary" onclick="saveStrategy()">保存策略</button>
+                        <button class="btn secondary" onclick="resetStrategyForm()">清空</button>
+                    </div>
+                </div>
+
+                <div class="card editor-card" id="groupEditorCard">
+                    <button class="btn secondary editor-close" type="button" onclick="closeEditorCard('groupEditorCard')">关闭</button>
+                    <h2>新增/编辑策略组</h2>
+                    <input type="hidden" id="groupId" />
+                    <input id="groupName" placeholder="策略组名称" />
+                    <input id="groupDesc" placeholder="策略组描述" />
+                    <select id="groupMode">
+                        <option value="AND">全部满足</option>
+                        <option value="OR">满足任一策略</option>
+                    </select>
+                    <div class="hint">勾选要包含在策略组内的策略</div>
+                    <div id="groupStrategyList" class="checkbox-list"></div>
+                    <div class="btn-row">
+                        <button class="btn primary" onclick="saveGroup()">保存策略组</button>
+                        <button class="btn secondary" onclick="resetGroupForm()">清空</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>页面导航</h2>
+                    <div class="btn-row">
+                        <a class="btn secondary" href="/screener">去运行选股</a>
+                        <a class="btn secondary" href="/">股票分析</a>
+                        <a class="btn secondary" href="/vt">虚拟炒股</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay" id="mobileOverlay" onclick="closeAllMobileLayers()"></div>
+    <div class="mobile-floating-trigger">
+        <button class="btn primary" type="button" onclick="openConfigHub()">配置策略</button>
+    </div>
+    <div class="mobile-hub" id="mobileHub">
+        <div class="mobile-hub-card">
+            <div class="mobile-hub-title">移动端配置入口</div>
+            <div class="mobile-hub-desc">先选择配置类型，再进入第二层弹窗填写详细内容。</div>
+            <div class="mobile-hub-actions">
+                <button class="btn primary" type="button" onclick="openStrategyEditor()">配置策略</button>
+                <button class="btn secondary" type="button" onclick="openGroupEditor()">配置策略组</button>
+                <button class="btn secondary" type="button" onclick="closeConfigHub()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let strategyData = [];
+        let groupData = [];
+        const MOBILE_BREAKPOINT = 720;
+        const STRATEGY_PAGE_SIZE = 6;
+        const GROUP_PAGE_SIZE = 6;
+        let strategyPage = 1;
+        let groupPage = 1;
+
+        function isMobileLayout() {
+            return window.innerWidth <= MOBILE_BREAKPOINT;
+        }
+
+        function getPaginationData(items, currentPage, pageSize) {
+            const total = items.length;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+            const start = total === 0 ? 0 : (safePage - 1) * pageSize;
+            const end = Math.min(start + pageSize, total);
+            return {
+                total,
+                totalPages,
+                currentPage: safePage,
+                pageItems: items.slice(start, end),
+                start,
+                end,
+            };
+        }
+
+        function renderPagination(containerId, pagination, onPageChange) {
+            const el = document.getElementById(containerId);
+            if (pagination.total <= 0) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            el.style.display = 'flex';
+            el.innerHTML = `
+                <div class="pagination-info">第 ${pagination.currentPage} / ${pagination.totalPages} 页，共 ${pagination.total} 条</div>
+                <div class="pagination-actions">
+                    <button class="btn secondary" ${pagination.currentPage <= 1 ? 'disabled' : ''} onclick="${onPageChange}(${pagination.currentPage - 1})">上一页</button>
+                    <button class="btn secondary" ${pagination.currentPage >= pagination.totalPages ? 'disabled' : ''} onclick="${onPageChange}(${pagination.currentPage + 1})">下一页</button>
+                </div>
+            `;
+        }
+
+        function toggleOverlay(show) {
+            document.getElementById('mobileOverlay').classList.toggle('show', !!show);
+        }
+
+        function openConfigHub() {
+            if (!isMobileLayout()) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+            closeEditorCard('strategyEditorCard');
+            closeEditorCard('groupEditorCard');
+            document.getElementById('mobileHub').classList.add('show');
+            toggleOverlay(true);
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeConfigHub() {
+            document.getElementById('mobileHub').classList.remove('show');
+            if (!document.querySelector('.editor-card.show')) {
+                toggleOverlay(false);
+                document.body.style.overflow = '';
+            }
+        }
+
+        function openEditorCard(cardId) {
+            if (!isMobileLayout()) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+            closeConfigHub();
+            document.getElementById(cardId).classList.add('show');
+            toggleOverlay(true);
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeEditorCard(cardId) {
+            document.getElementById(cardId).classList.remove('show');
+            if (!document.querySelector('.editor-card.show')) {
+                document.body.style.overflow = '';
+                toggleOverlay(false);
+            }
+        }
+
+        function closeAllMobileLayers() {
+            closeConfigHub();
+            closeEditorCard('strategyEditorCard');
+            closeEditorCard('groupEditorCard');
+        }
+
+        function openStrategyEditor() {
+            openEditorCard('strategyEditorCard');
+        }
+
+        function openGroupEditor() {
+            openEditorCard('groupEditorCard');
+        }
+
+        function switchStrategyMode() {
+            document.getElementById('aiPromptWrap').style.display = document.getElementById('strategyMode').value === 'ai' ? 'block' : 'none';
+        }
+
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s]));
+        }
+
+        function renderStrategies() {
+            const el = document.getElementById('strategyList');
+            const pagination = getPaginationData(strategyData, strategyPage, STRATEGY_PAGE_SIZE);
+            strategyPage = pagination.currentPage;
+            document.getElementById('strategySummary').textContent = pagination.total
+                ? `当前展示 ${pagination.start + 1}-${pagination.end} 条，共 ${pagination.total} 条`
+                : '暂无策略';
+            if (!pagination.total) {
+                el.innerHTML = '<div class="muted">暂无策略</div>';
+                renderPagination('strategyPagination', pagination, 'changeStrategyPage');
+                return;
+            }
+            el.innerHTML = pagination.pageItems.map(item => `
+                <div class="item">
+                    <div class="row">
+                        <div>
+                            <div class="name">${item.name}</div>
+                            <div class="small">${item.description || '无描述'}</div>
+                        </div>
+                        <div class="small">${item.enabled ? '启用中' : '已停用'} | ${item.create_mode || 'direct'}</div>
+                    </div>
+                    <div>${item.enabled ? '<span class="pill">可执行</span>' : '<span class="pill">停用</span>'}</div>
+                    <div class="btn-row" style="margin-top:10px;">
+                        <button class="btn secondary" onclick="editStrategy(${item.id})">编辑</button>
+                        <button class="btn danger" onclick="deleteStrategy(${item.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+            renderPagination('strategyPagination', pagination, 'changeStrategyPage');
+        }
+
+        function renderGroups() {
+            const el = document.getElementById('groupList');
+            const pagination = getPaginationData(groupData, groupPage, GROUP_PAGE_SIZE);
+            groupPage = pagination.currentPage;
+            document.getElementById('groupSummary').textContent = pagination.total
+                ? `当前展示 ${pagination.start + 1}-${pagination.end} 条，共 ${pagination.total} 条`
+                : '暂无策略组';
+            if (!pagination.total) {
+                el.innerHTML = '<div class="muted">暂无策略组</div>';
+                renderPagination('groupPagination', pagination, 'changeGroupPage');
+                return;
+            }
+            el.innerHTML = pagination.pageItems.map(item => `
+                <div class="item">
+                    <div class="row">
+                        <div>
+                            <div class="name">${item.name}</div>
+                            <div class="small">${item.description || '无描述'}</div>
+                        </div>
+                        <div class="small">${item.match_mode || 'AND'}</div>
+                    </div>
+                    <div>${(item.strategies || []).map(s => `<span class="pill">${s.name}</span>`).join('')}</div>
+                    <div class="btn-row" style="margin-top:10px;">
+                        <button class="btn secondary" onclick="editGroup(${item.id})">编辑</button>
+                        <button class="btn danger" onclick="deleteGroup(${item.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+            renderPagination('groupPagination', pagination, 'changeGroupPage');
+        }
+
+        function changeStrategyPage(page) {
+            strategyPage = page;
+            renderStrategies();
+        }
+
+        function changeGroupPage(page) {
+            groupPage = page;
+            renderGroups();
+        }
+
+        function renderGroupStrategyOptions(selectedIds = []) {
+            const el = document.getElementById('groupStrategyList');
+            const enabledStrategies = strategyData.filter(item => item.enabled);
+            if (!enabledStrategies.length) {
+                el.innerHTML = '<div class="muted">暂无可用策略，请先创建并启用策略</div>';
+                return;
+            }
+            el.innerHTML = enabledStrategies.map(item => `
+                <label class="checkbox-item">
+                    <input type="checkbox" value="${item.id}" ${selectedIds.includes(item.id) ? 'checked' : ''} />
+                    <span>${item.name}</span>
+                </label>
+            `).join('');
+        }
+
+        function editStrategy(id) {
+            const item = strategyData.find(s => s.id === id);
+            if (!item) return;
+            document.getElementById('strategyId').value = item.id;
+            document.getElementById('strategyName').value = item.name || '';
+            document.getElementById('strategyDesc').value = item.description || '';
+            document.getElementById('strategyCode').value = item.code || '';
+            document.getElementById('strategyMode').value = item.create_mode === 'ai' ? 'ai' : 'direct';
+            document.getElementById('strategyEnabled').checked = !!item.enabled;
+            switchStrategyMode();
+            if (isMobileLayout()) {
+                openStrategyEditor();
+            } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function resetStrategyForm() {
+            document.getElementById('strategyId').value = '';
+            document.getElementById('strategyName').value = '';
+            document.getElementById('strategyDesc').value = '';
+            document.getElementById('strategyPrompt').value = '';
+            document.getElementById('strategyCode').value = '';
+            document.getElementById('strategyMode').value = 'direct';
+            document.getElementById('strategyEnabled').checked = true;
+            switchStrategyMode();
+        }
+
+        async function saveStrategy() {
+            const id = document.getElementById('strategyId').value;
+            const payload = {
+                name: document.getElementById('strategyName').value.trim(),
+                description: document.getElementById('strategyDesc').value.trim(),
+                code: document.getElementById('strategyCode').value,
+                enabled: document.getElementById('strategyEnabled').checked,
+                create_mode: document.getElementById('strategyMode').value,
+            };
+            const url = id ? `/api/strategies/${id}` : '/api/strategies';
+            const method = id ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || '保存失败');
+                return;
+            }
+            resetStrategyForm();
+            if (isMobileLayout()) {
+                closeEditorCard('strategyEditorCard');
+            }
+            await loadAll();
+        }
+
+        async function deleteStrategy(id) {
+            if (!confirm('确定删除这个策略吗？')) return;
+            const res = await fetch(`/api/strategies/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || '删除失败');
+                return;
+            }
+            await loadAll();
+        }
+
+        async function generateCode() {
+            const prompt = document.getElementById('strategyPrompt').value.trim();
+            if (!prompt) {
+                alert('请先输入策略描述');
+                return;
+            }
+            const button = document.getElementById('generateCodeBtn');
+            const status = document.getElementById('generateStatus');
+            const statusText = document.getElementById('generateStatusText');
+            const editorMask = document.getElementById('editorLoadingMask');
+            const editorLoadingText = document.getElementById('editorLoadingText');
+            const originalLabel = button.textContent;
+            const originalStatusText = statusText.textContent;
+            const originalEditorLoadingText = editorLoadingText.textContent;
+            let slowHintTimer = null;
+            let elapsedTimer = null;
+            let elapsedSeconds = 0;
+            button.disabled = true;
+            button.textContent = '生成中...';
+            statusText.textContent = originalStatusText;
+            status.classList.add('show');
+            editorMask.classList.add('show');
+            editorLoadingText.textContent = originalEditorLoadingText;
+            elapsedTimer = setInterval(() => {
+                elapsedSeconds += 1;
+                if (elapsedSeconds >= 10) {
+                    statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
+                    editorLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
+                    return;
+                }
+                statusText.textContent = `正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 ${elapsedSeconds} 秒`;
+                editorLoadingText.textContent = `LLM 正在处理你的描述，请稍候... 已等待 ${elapsedSeconds} 秒`;
+            }, 1000);
+            slowHintTimer = setTimeout(() => {
+                statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
+                editorLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
+            }, 10000);
+            try {
+                const res = await fetch('/api/strategies/generate-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || '生成失败');
+                    return;
+                }
+                document.getElementById('strategyCode').value = data.code || '';
+            } finally {
+                if (slowHintTimer) clearTimeout(slowHintTimer);
+                if (elapsedTimer) clearInterval(elapsedTimer);
+                button.disabled = false;
+                button.textContent = originalLabel;
+                statusText.textContent = originalStatusText;
+                editorLoadingText.textContent = originalEditorLoadingText;
+                editorMask.classList.remove('show');
+                status.classList.remove('show');
+            }
+        }
+
+        function editGroup(id) {
+            const item = groupData.find(g => g.id === id);
+            if (!item) return;
+            document.getElementById('groupId').value = item.id;
+            document.getElementById('groupName').value = item.name || '';
+            document.getElementById('groupDesc').value = item.description || '';
+            document.getElementById('groupMode').value = item.match_mode || 'AND';
+            renderGroupStrategyOptions(item.strategy_ids || []);
+            if (isMobileLayout()) {
+                openGroupEditor();
+            } else {
+                window.scrollTo({ top: document.body.scrollHeight / 2, behavior: 'smooth' });
+            }
+        }
+
+        function resetGroupForm() {
+            document.getElementById('groupId').value = '';
+            document.getElementById('groupName').value = '';
+            document.getElementById('groupDesc').value = '';
+            document.getElementById('groupMode').value = 'AND';
+            renderGroupStrategyOptions([]);
+        }
+
+        async function saveGroup() {
+            const strategyIds = Array.from(document.querySelectorAll('#groupStrategyList input:checked')).map(el => Number(el.value));
+            const id = document.getElementById('groupId').value;
+            const payload = {
+                name: document.getElementById('groupName').value.trim(),
+                description: document.getElementById('groupDesc').value.trim(),
+                match_mode: document.getElementById('groupMode').value,
+                strategy_ids: strategyIds,
+            };
+            const url = id ? `/api/strategy-groups/${id}` : '/api/strategy-groups';
+            const method = id ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || '保存失败');
+                return;
+            }
+            resetGroupForm();
+            if (isMobileLayout()) {
+                closeEditorCard('groupEditorCard');
+            }
+            await loadAll();
+        }
+
+        async function deleteGroup(id) {
+            if (!confirm('确定删除这个策略组吗？')) return;
+            const res = await fetch(`/api/strategy-groups/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || '删除失败');
+                return;
+            }
+            await loadAll();
+        }
+
+        async function loadAll() {
+            const res = await fetch('/api/strategies');
+            const data = await res.json();
+            strategyData = data.strategies || [];
+            groupData = data.groups || [];
+            renderStrategies();
+            renderGroups();
+            renderGroupStrategyOptions([]);
+        }
+
+        (async function init() {
+            switchStrategyMode();
+            await loadAll();
+        })();
+
+        window.addEventListener('resize', () => {
+            if (!isMobileLayout()) {
+                closeAllMobileLayers();
+                document.body.style.overflow = '';
+            }
+        });
+    </script>
+</body>
+</html>
