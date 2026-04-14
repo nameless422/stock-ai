@@ -24,6 +24,7 @@
         .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #20304a; color: #9ed4ff; font-size: 12px; margin-right: 6px; margin-top: 8px; }
         .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
         .btn { border: none; border-radius: 12px; padding: 11px 14px; font-size: 14px; min-height: 44px; cursor: pointer; width: 100%; }
+        .btn:disabled { opacity: 0.7; cursor: wait; }
         .btn.primary { background: #ffd166; color: #271800; }
         .btn.secondary { background: #23324a; color: #dbe6f9; }
         .btn.green { background: #33c481; color: #081910; }
@@ -41,14 +42,23 @@
         .checkbox-list { display: grid; gap: 8px; margin-bottom: 12px; }
         .checkbox-item { display: flex; gap: 8px; align-items: flex-start; background: #0b1321; padding: 10px; border-radius: 10px; }
         .checkbox-item input { width: auto; margin: 2px 0 0; }
-        .contract { background: #0b1321; border-radius: 12px; padding: 14px; line-height: 1.8; font-size: 13px; color: #c9d7ef; white-space: normal; }
-        details summary { cursor: pointer; list-style: none; }
-        details summary::-webkit-details-marker { display: none; }
+        .generate-status { display: none; align-items: center; gap: 10px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(11, 19, 33, 0.92); border: 1px solid #294260; color: #b8d8ff; font-size: 13px; line-height: 1.6; }
+        .generate-status.show { display: flex; }
+        .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(184, 216, 255, 0.22); border-top-color: #9ed4ff; animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+        .sheet-loading-mask { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(6, 12, 21, 0.74); backdrop-filter: blur(6px); border-radius: inherit; z-index: 5; }
+        .sheet-loading-mask.show { display: flex; }
+        .sheet-loading-card { min-width: min(100%, 300px); display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(13, 21, 35, 0.96); border: 1px solid #314a69; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28); color: #dbeafe; }
+        .sheet-loading-card .spinner { width: 20px; height: 20px; border-width: 3px; }
+        .sheet-loading-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .sheet-loading-desc { color: #9fb7db; font-size: 12px; line-height: 1.6; }
         .nav-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
         .nav-link { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; border-radius: 12px; background: #172338; color: #dbe6f9; text-decoration: none; font-size: 13px; }
         .section-meta { margin-bottom: 12px; }
         .pagination { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         .pagination-info { color: #90a6c8; font-size: 12px; }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         @media (max-width: 420px) {
             .page { padding: 12px 12px 88px; }
             .sheet { inset: 8px; padding: 12px; }
@@ -83,17 +93,6 @@
             <div id="groupPagination" class="pagination" style="display:none;"></div>
         </div>
 
-        <div class="panel">
-            <div class="panel-title">
-                <h2>输入输出约定</h2>
-                <span class="hint">按需展开</span>
-            </div>
-            <details>
-                <summary class="btn secondary" style="text-align:center;">查看约定</summary>
-                <div id="contractBox" class="contract" style="margin-top:12px;">加载中...</div>
-            </details>
-        </div>
-
         <div class="nav-row">
             <a class="nav-link" href="/screener">运行选股</a>
             <a class="nav-link" href="/">股票分析</a>
@@ -104,6 +103,15 @@
     <div class="overlay" id="mobileOverlay" onclick="closeAllSheets()"></div>
 
     <div class="sheet" id="strategyEditorCard">
+        <div id="sheetLoadingMask" class="sheet-loading-mask" aria-hidden="true">
+            <div class="sheet-loading-card" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <div>
+                    <div class="sheet-loading-title">策略代码生成中</div>
+                    <div class="sheet-loading-desc" id="sheetLoadingText">LLM 正在处理你的描述，请稍候...</div>
+                </div>
+            </div>
+        </div>
         <div class="sheet-head">
             <h3>策略配置</h3>
             <button class="btn secondary" type="button" style="width:auto; min-width:88px;" onclick="closeSheet('strategyEditorCard')">关闭</button>
@@ -117,7 +125,11 @@
         </select>
         <div id="aiPromptWrap" style="display:none;">
             <textarea id="strategyPrompt" placeholder="例如：找出最近20日站上 MA20，且日线 MACD 金叉，同时周线未出现 4 连阳的股票"></textarea>
-            <button class="btn green" type="button" onclick="generateCode()">生成代码</button>
+            <button class="btn green" id="generateCodeBtn" type="button" onclick="generateCode()">生成代码</button>
+            <div id="generateStatus" class="generate-status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <span id="generateStatusText">正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 0 秒</span>
+            </div>
         </div>
         <textarea id="strategyCode" style="min-height:260px;" placeholder="策略代码必须定义 run_strategy(context)"></textarea>
         <label class="small" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
@@ -398,17 +410,59 @@
                 alert('请先输入策略描述');
                 return;
             }
-            const res = await fetch('/api/strategies/generate-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.error || '生成失败');
-                return;
+            const button = document.getElementById('generateCodeBtn');
+            const status = document.getElementById('generateStatus');
+            const statusText = document.getElementById('generateStatusText');
+            const sheetMask = document.getElementById('sheetLoadingMask');
+            const sheetLoadingText = document.getElementById('sheetLoadingText');
+            const originalLabel = button.textContent;
+            const originalStatusText = statusText.textContent;
+            const originalSheetLoadingText = sheetLoadingText.textContent;
+            let slowHintTimer = null;
+            let elapsedTimer = null;
+            let elapsedSeconds = 0;
+            button.disabled = true;
+            button.textContent = '生成中...';
+            statusText.textContent = originalStatusText;
+            status.classList.add('show');
+            sheetMask.classList.add('show');
+            sheetLoadingText.textContent = originalSheetLoadingText;
+            elapsedTimer = setInterval(() => {
+                elapsedSeconds += 1;
+                if (elapsedSeconds >= 10) {
+                    statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
+                    sheetLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
+                    return;
+                }
+                statusText.textContent = `正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 ${elapsedSeconds} 秒`;
+                sheetLoadingText.textContent = `LLM 正在处理你的描述，请稍候... 已等待 ${elapsedSeconds} 秒`;
+            }, 1000);
+            slowHintTimer = setTimeout(() => {
+                statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
+                sheetLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
+            }, 10000);
+            try {
+                const res = await fetch('/api/strategies/generate-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || '生成失败');
+                    return;
+                }
+                document.getElementById('strategyCode').value = data.code || '';
+            } finally {
+                if (slowHintTimer) clearTimeout(slowHintTimer);
+                if (elapsedTimer) clearInterval(elapsedTimer);
+                button.disabled = false;
+                button.textContent = originalLabel;
+                statusText.textContent = originalStatusText;
+                sheetLoadingText.textContent = originalSheetLoadingText;
+                sheetMask.classList.remove('show');
+                status.classList.remove('show');
             }
-            document.getElementById('strategyCode').value = data.code || '';
         }
 
         function editGroup(id) {
@@ -467,19 +521,6 @@
             await loadAll();
         }
 
-        async function loadContract() {
-            const res = await fetch('/api/strategy/contract');
-            const data = await res.json();
-            document.getElementById('contractBox').innerHTML = `
-                <div><strong>可用输入</strong></div>
-                ${data.inputs.map(item => `<div><code>${escapeHtml(item.name)}</code> (${escapeHtml(item.type)}) - ${escapeHtml(item.description)}</div>`).join('')}
-                <div style="margin-top:12px;"><strong>输出格式</strong></div>
-                ${Object.entries(data.output).map(([key, value]) => `<div><code>${escapeHtml(key)}</code> - ${escapeHtml(value)}</div>`).join('')}
-                <div style="margin-top:12px;"><strong>代码模板</strong></div>
-                <pre style="white-space:pre-wrap; margin-top:8px;">${escapeHtml(data.template)}</pre>
-            `;
-        }
-
         async function loadAll() {
             const res = await fetch('/api/strategies');
             const data = await res.json();
@@ -492,7 +533,7 @@
 
         (async function init() {
             switchStrategyMode();
-            await Promise.all([loadAll(), loadContract()]);
+            await loadAll();
         })();
     </script>
 </body>
