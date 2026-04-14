@@ -1,1 +1,9 @@
-dmVmL3ZlbnYKL19fcHlfY2FjaGVfXwouKnB5YwpzY3JlZW5pbmcuZGIKYXBwLmxvZwoqLnB5bwoqLnB5ZApQeXRob24KZ352ZW4KdmVuLw==
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+screening.db
