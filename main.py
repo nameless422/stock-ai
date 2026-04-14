@@ -15,6 +15,7 @@ import json
 import asyncio
 import threading
 import time
+from time import sleep
 import sqlite3
 import os
 import hashlib
@@ -494,43 +495,71 @@ def generate_strategy_code(prompt_text: str):
             or os.getenv("OPENAI_MODEL")
             or "gpt-4o-mini"
         )
-    system_prompt = (
-        "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
-        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>、分析过程或任何额外文本。"
-        "必须定义 run_strategy(context) 函数。"
-        "返回 dict，包含 pass(bool)、reason(str)，可选 score、metrics。"
-        "context 是嵌套 dict，必须使用 context['stock']['code']、context['snapshots']['daily']、context['indicators']['daily']['macd']['dif'] 这类访问方式。"
-        "不要使用 context.get('stock.code') 这种点路径写法。"
-    )
-    user_prompt = (
-        f"策略说明：{prompt_text}\n\n"
-        "可用上下文：context['stock']、context['snapshots']['daily']、context['snapshots']['weekly']、"
-        "context['indicators']['daily']、context['indicators']['weekly']。\n"
-        "约束：\n"
-        "1. 数据不足时返回 pass=False 和明确原因。\n"
-        "2. 优先复用 context['snapshots'] 和 context['indicators'] 已有字段。\n"
-        "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
-        "4. 最终只返回完整 Python 代码。\n"
-    )
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.2,
-    }
+    payloads = [
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是资深量化工程师，只返回可执行的 Python 代码。"
+                        "必须定义 run_strategy(context) 并返回包含 pass、reason 的 dict。"
+                        "不要输出 Markdown、解释或 <think>。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"策略说明：{prompt_text}\n"
+                        "可用上下文：context['stock']、context['snapshots']、context['indicators']。\n"
+                        "数据不足时返回 pass=False。\n"
+                        "必须使用 context['a']['b'] 方式访问。\n"
+                        "只返回完整 Python 代码。"
+                    ),
+                },
+            ],
+            "temperature": 0.2,
+        },
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{prompt_text}\n"
+                        "使用 context['snapshots'] 或 context['indicators']，"
+                        "返回 {'pass': bool, 'reason': str, 'score': number, 'metrics': dict}。"
+                    ),
+                },
+            ],
+            "temperature": 0.1,
+        },
+    ]
+
+    last_error = None
     with httpx.Client(timeout=90) as client:
-        response = client.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+        for index, payload in enumerate(payloads):
+            try:
+                response = client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                if exc.response.status_code == 529 and index < len(payloads) - 1:
+                    sleep(1)
+                    continue
+                raise
+        else:
+            raise last_error or ValueError("策略生成失败")
     choices = data.get("choices") or []
     if not choices:
         raise ValueError(f"策略生成返回异常，缺少 choices: {data}")
