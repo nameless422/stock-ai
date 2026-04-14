@@ -593,8 +593,6 @@
             });
             const detailTab = document.getElementById('switchDetail');
             detailTab.classList.toggle('disabled', !detailReady);
-            const activeTab = document.getElementById('switch' + section.charAt(0).toUpperCase() + section.slice(1));
-            activeTab.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
             const track = document.getElementById('swipeTrack');
             track.classList.remove('dragging');
             syncSwipeTrack();

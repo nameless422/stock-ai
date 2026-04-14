@@ -259,7 +259,6 @@
 
         function openConfigHub() {
             if (!isMobileLayout()) {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
                 return;
             }
             closeEditorCard('strategyEditorCard');
@@ -279,7 +278,6 @@
 
         function openEditorCard(cardId) {
             if (!isMobileLayout()) {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
                 return;
             }
             closeConfigHub();
@@ -417,8 +415,6 @@
             switchStrategyMode();
             if (isMobileLayout()) {
                 openStrategyEditor();
-            } else {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         }
 
@@ -597,8 +593,6 @@
             renderGroupStrategyOptions(item.strategy_ids || []);
             if (isMobileLayout()) {
                 openGroupEditor();
-            } else {
-                window.scrollTo({ top: document.body.scrollHeight / 2, behavior: 'smooth' });
             }
         }
 
