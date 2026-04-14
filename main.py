@@ -480,7 +480,7 @@ def generate_strategy_code(prompt_text: str):
         model = (
             os.getenv("MINIMAX_MODEL")
             or os.getenv("LLM_MODEL")
-            or "MiniMax-M2.7"
+            or "MiniMax-M2.5"
         )
     else:
         base_url = (
@@ -494,7 +494,6 @@ def generate_strategy_code(prompt_text: str):
             or os.getenv("OPENAI_MODEL")
             or "gpt-4o-mini"
         )
-    contract = get_strategy_contract()
     system_prompt = (
         "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
         "只能返回代码，不要解释，不要 Markdown，不要输出 <think>、分析过程或任何额外文本。"
@@ -505,12 +504,12 @@ def generate_strategy_code(prompt_text: str):
     )
     user_prompt = (
         f"策略说明：{prompt_text}\n\n"
-        f"可用输入：{json.dumps(contract['inputs'], ensure_ascii=False)}\n"
-        f"输出约定：{json.dumps(contract['output'], ensure_ascii=False)}\n"
-        "补充约束：\n"
-        "1. 如果数据不足，直接返回 pass=False 和明确原因。\n"
-        "2. 优先使用 context['snapshots'] 和 context['indicators'] 中已有字段。\n"
-        "3. 访问嵌套字段时使用字典下标，不要把 key 拼成 'a.b'。\n"
+        "可用上下文：context['stock']、context['snapshots']['daily']、context['snapshots']['weekly']、"
+        "context['indicators']['daily']、context['indicators']['weekly']。\n"
+        "约束：\n"
+        "1. 数据不足时返回 pass=False 和明确原因。\n"
+        "2. 优先复用 context['snapshots'] 和 context['indicators'] 已有字段。\n"
+        "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
         "4. 最终只返回完整 Python 代码。\n"
     )
     payload = {
