@@ -359,12 +359,14 @@
         }
         .pager {
             display: none;
+            flex-direction: column;
             gap: 8px;
             margin-bottom: 12px;
             padding: 10px 10px 8px;
             border-radius: 16px;
             background: rgba(9, 16, 29, 0.55);
             border: 1px solid rgba(130, 157, 196, 0.12);
+            overflow: hidden;
         }
         .pager-info {
             width: 100%;
@@ -381,6 +383,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            min-width: 0;
+            overflow: hidden;
         }
         .pager-btn, .page-chip {
             min-height: 38px;
@@ -696,7 +700,7 @@
                 pager.style.display = 'none';
                 return;
             }
-            pager.style.display = 'grid';
+            pager.style.display = 'flex';
             document.getElementById(baseId + 'PagerInfo').innerHTML = `<span>共 ${total} 条，每页 ${pageSize} 条</span><span>第 ${pageState.page} / ${pageState.totalPages} 页</span>`;
             document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
             document.getElementById(baseId + 'NextBtn').disabled = pageState.page === pageState.totalPages;
