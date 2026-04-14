@@ -462,26 +462,38 @@ def resolve_screening_target(target_type=None, target_id=None):
 
 
 def generate_strategy_code(prompt_text: str):
-    api_key = (
-        os.getenv("MINIMAX_API_KEY")
-        or os.getenv("LLM_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-    )
+    minimax_api_key = os.getenv("MINIMAX_API_KEY")
+    llm_api_key = os.getenv("LLM_API_KEY")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    api_key = minimax_api_key or llm_api_key or openai_api_key
     if not api_key:
         raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
-    base_url = (
-        os.getenv("MINIMAX_API_BASE")
-        or os.getenv("LLM_API_BASE")
-        or os.getenv("OPENAI_BASE_URL")
-        or os.getenv("OPENAI_API_BASE")
-        or "https://api.openai.com/v1"
-    ).rstrip("/")
-    model = (
-        os.getenv("MINIMAX_MODEL")
-        or os.getenv("LLM_MODEL")
-        or os.getenv("OPENAI_MODEL")
-        or "MiniMax-M2.5"
-    )
+
+    # Prefer provider-specific defaults so a standalone MINIMAX_API_KEY works
+    # without also requiring the caller to configure a custom base URL.
+    if minimax_api_key and api_key == minimax_api_key:
+        base_url = (
+            os.getenv("MINIMAX_API_BASE")
+            or os.getenv("LLM_API_BASE")
+            or "https://api.minimax.io/v1"
+        ).rstrip("/")
+        model = (
+            os.getenv("MINIMAX_MODEL")
+            or os.getenv("LLM_MODEL")
+            or "MiniMax-M2.7"
+        )
+    else:
+        base_url = (
+            os.getenv("LLM_API_BASE")
+            or os.getenv("OPENAI_BASE_URL")
+            or os.getenv("OPENAI_API_BASE")
+            or "https://api.openai.com/v1"
+        ).rstrip("/")
+        model = (
+            os.getenv("LLM_MODEL")
+            or os.getenv("OPENAI_MODEL")
+            or "gpt-4o-mini"
+        )
     contract = get_strategy_contract()
     system_prompt = (
         "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
@@ -520,11 +532,17 @@ def generate_strategy_code(prompt_text: str):
         )
         response.raise_for_status()
         data = response.json()
-    content = data["choices"][0]["message"]["content"].strip()
+    choices = data.get("choices") or []
+    if not choices:
+        raise ValueError(f"策略生成返回异常，缺少 choices: {data}")
+    message = choices[0].get("message") or {}
+    content = (message.get("content") or "").strip()
+    if not content:
+        raise ValueError(f"策略生成返回空内容: {data}")
     if "<think>" in content and "</think>" in content:
         content = content.split("</think>", 1)[1].strip()
     if content.startswith("```"):
-        content = content.strip("`")
+        content = content.strip("`").strip()
         if content.startswith("python"):
             content = content[6:].lstrip()
     return content
@@ -1776,8 +1794,8 @@ async def create_strategy_api(request: Request):
     try:
         test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
         validation = run_strategy_code(code, test_context)
-        if validation.get("error") and "未定义 run_strategy" in validation.get("reason", ""):
-            return JSONResponse({"ok": False, "error": validation["reason"]}, status_code=400)
+        if validation.get("error"):
+            return JSONResponse({"ok": False, "error": validation.get("reason", "策略代码校验失败")}, status_code=400)
         strategy = create_strategy(name, description, code, create_mode=create_mode, enabled=enabled)
         return {"ok": True, "strategy": strategy}
     except sqlite3.IntegrityError:
@@ -1796,6 +1814,10 @@ async def update_strategy_api(strategy_id: int, request: Request):
     if not name or not code:
         return JSONResponse({"ok": False, "error": "策略名称和代码不能为空"}, status_code=400)
     try:
+        test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
+        validation = run_strategy_code(code, test_context)
+        if validation.get("error"):
+            return JSONResponse({"ok": False, "error": validation.get("reason", "策略代码校验失败")}, status_code=400)
         ok = update_strategy(strategy_id, name, description, code, enabled=enabled)
         if not ok:
             return JSONResponse({"ok": False, "error": "策略不存在"}, status_code=404)
