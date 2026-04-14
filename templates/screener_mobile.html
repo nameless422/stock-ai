@@ -373,32 +373,38 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
             gap: 8px;
         }
         .pager-actions {
             width: 100%;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-            gap: 8px;
+            display: flex;
             align-items: center;
+            gap: 8px;
         }
         .pager-btn, .page-chip {
             min-height: 38px;
-            width: 100%;
             border-radius: 12px;
             border: 1px solid rgba(130, 157, 196, 0.12);
             background: #18263d;
             color: #d6e4ff;
             font-size: 12px;
             padding: 0 10px;
+            box-sizing: border-box;
+        }
+        .pager-btn {
+            flex: 1 1 0;
+            min-width: 0;
         }
         .page-chip {
             display: inline-flex;
+            flex: 0 0 auto;
             align-items: center;
             justify-content: center;
             background: rgba(9, 16, 29, 0.85);
-            min-width: 78px;
-            padding: 0 10px;
+            min-width: 64px;
+            padding: 0 12px;
+            white-space: nowrap;
         }
         .page-chip.full {
             display: inline-flex;
@@ -435,7 +441,20 @@
             .item-top { gap: 8px; }
             .name { font-size: 15px; }
             .switch-tab { font-size: 11px; }
-            .pager-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .pager {
+                padding: 9px 9px 8px;
+            }
+            .pager-actions {
+                gap: 6px;
+            }
+            .pager-btn, .page-chip {
+                min-height: 36px;
+                font-size: 11px;
+            }
+            .page-chip {
+                min-width: 58px;
+                padding: 0 10px;
+            }
         }
     </style>
 </head>
