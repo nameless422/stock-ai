@@ -259,6 +259,10 @@
             background: linear-gradient(180deg, rgba(19, 33, 54, 0.95), rgba(11, 21, 37, 0.98));
             border: 1px solid rgba(130, 157, 196, 0.14);
         }
+        .item-main {
+            flex: 1;
+            min-width: 0;
+        }
         .item-top {
             display: flex;
             justify-content: space-between;
@@ -275,6 +279,12 @@
             color: var(--muted);
             font-size: 12px;
         }
+        .subline {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.6;
+            margin-top: 8px;
+        }
         .score-badge {
             padding: 7px 10px;
             border-radius: 999px;
@@ -283,6 +293,30 @@
             font-size: 12px;
             font-weight: 700;
             white-space: nowrap;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .metric {
+            padding: 10px 8px;
+            border-radius: 14px;
+            background: rgba(9, 16, 29, 0.58);
+            border: 1px solid rgba(130, 157, 196, 0.1);
+        }
+        .metric-label {
+            color: var(--muted);
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+        .metric-value {
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.3;
+            word-break: break-word;
         }
         .chip-row {
             display: flex;
@@ -332,17 +366,18 @@
         .pager-actions {
             width: 100%;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
         }
         .pager-btn, .page-chip {
-            min-height: 42px;
+            min-height: 38px;
             width: 100%;
             border-radius: 12px;
             border: 1px solid rgba(130, 157, 196, 0.12);
             background: #18263d;
             color: #d6e4ff;
             font-size: 12px;
+            padding: 0 10px;
         }
         .page-chip {
             display: inline-flex;
@@ -381,6 +416,10 @@
             h1 { font-size: 24px; }
             .hero-actions, .control-grid, .meta-grid, .nav-card { grid-template-columns: 1fr; }
             .stat-value { font-size: 19px; }
+            .item { padding: 12px; }
+            .item-top { gap: 8px; }
+            .name { font-size: 15px; }
+            .metric-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -666,18 +705,37 @@
         }
 
         function resultCardTemplate(item) {
+            const matched = (item.matched_strategies || []).map(name => `<span class="pill">${name}</span>`).join('');
+            const score = Number(item.score || 0).toFixed(1);
+            const volumeText = formatVol(item.current_vol);
+            const difText = Number(item.dif || 0).toFixed(2);
+            const deaText = Number(item.dea || 0).toFixed(2);
             return `
                 <div class="item">
                     <div class="item-top">
-                        <div>
+                        <div class="item-main">
                             <div class="name">${item.name}</div>
                             <span class="code">${item.code}</span>
+                            <div class="subline">${item.daily || '未返回命中策略'}</div>
                         </div>
-                        <div class="score-badge">评分 ${Number(item.score || 0).toFixed(1)}</div>
+                        <div class="score-badge">评分 ${score}</div>
                     </div>
-                    <div class="chip-row">${(item.matched_strategies || []).map(name => `<span class="pill">${name}</span>`).join('') || '<span class="pill">未返回命中策略</span>'}</div>
+                    <div class="chip-row">${matched || '<span class="pill">未返回命中策略</span>'}</div>
                     <div class="reason">${item.reason || item.weekly || '-'}</div>
-                    <div class="small">成交量 ${formatVol(item.current_vol)} | DIF ${Number(item.dif || 0).toFixed(2)} | DEA ${Number(item.dea || 0).toFixed(2)}</div>
+                    <div class="metric-grid">
+                        <div class="metric">
+                            <div class="metric-label">成交量</div>
+                            <div class="metric-value">${volumeText}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">DIF</div>
+                            <div class="metric-value">${difText}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">DEA</div>
+                            <div class="metric-value">${deaText}</div>
+                        </div>
+                    </div>
                 </div>
             `;
         }
