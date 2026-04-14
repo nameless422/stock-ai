@@ -553,11 +553,6 @@
             currentDetailKey: '',
         };
         let activeMobileSection = 'results';
-        let swipeState = {
-            startX: 0,
-            currentX: 0,
-            dragging: false,
-        };
         let detailReady = false;
 
         function updateSwitchIndicator() {
@@ -597,63 +592,6 @@
             track.classList.remove('dragging');
             syncSwipeTrack();
             updateSwitchIndicator();
-        }
-
-        function setupSwipeTabs() {
-            const stage = document.getElementById('swipeStage');
-            const track = document.getElementById('swipeTrack');
-            const ordered = ['results', 'history', 'detail'];
-
-            const onStart = (clientX) => {
-                swipeState.startX = clientX;
-                swipeState.currentX = clientX;
-                swipeState.dragging = true;
-                track.classList.add('dragging');
-            };
-
-            const onMove = (clientX) => {
-                if (!swipeState.dragging) return;
-                swipeState.currentX = clientX;
-                const delta = clientX - swipeState.startX;
-                const currentIndex = ordered.indexOf(activeMobileSection);
-                const atStart = currentIndex === 0 && delta > 0;
-                const atEnd = currentIndex === ordered.length - 1 && delta < 0;
-                syncSwipeTrack((atStart || atEnd) ? delta * 0.35 : delta);
-            };
-
-            const onEnd = () => {
-                if (!swipeState.dragging) return;
-                const delta = swipeState.currentX - swipeState.startX;
-                swipeState.dragging = false;
-                const currentIndex = ordered.indexOf(activeMobileSection);
-                let nextIndex = currentIndex;
-                if (Math.abs(delta) > 56) {
-                    if (delta < 0 && currentIndex < ordered.length - 1) nextIndex += 1;
-                    if (delta > 0 && currentIndex > 0) nextIndex -= 1;
-                }
-                switchMobileSection(ordered[nextIndex], false);
-            };
-
-            stage.addEventListener('touchstart', (event) => {
-                if (event.touches.length !== 1) return;
-                onStart(event.touches[0].clientX);
-            }, { passive: true });
-
-            stage.addEventListener('touchmove', (event) => {
-                if (event.touches.length !== 1) return;
-                onMove(event.touches[0].clientX);
-            }, { passive: true });
-
-            stage.addEventListener('touchend', onEnd);
-            stage.addEventListener('touchcancel', onEnd);
-            stage.addEventListener('mousedown', (event) => onStart(event.clientX));
-            window.addEventListener('mousemove', (event) => onMove(event.clientX));
-            window.addEventListener('mouseup', onEnd);
-            window.addEventListener('resize', () => {
-                syncSwipeTrack();
-                updateSwitchIndicator();
-            });
-            syncSwipeTrack();
         }
 
         function qs() {
@@ -1008,9 +946,12 @@
         (async function init() {
             await loadTargets();
             startPolling();
-            setupSwipeTabs();
             switchMobileSection('results', false);
             document.getElementById('switchDetail').classList.add('disabled');
+            window.addEventListener('resize', () => {
+                syncSwipeTrack();
+                updateSwitchIndicator();
+            });
             updateSwitchIndicator();
         })();
     </script>
