@@ -462,16 +462,13 @@ def resolve_screening_target(target_type=None, target_id=None):
     }
 
 
-def generate_strategy_code(prompt_text: str):
+def build_strategy_generation_context(prompt_text: str):
     minimax_api_key = os.getenv("MINIMAX_API_KEY")
     llm_api_key = os.getenv("LLM_API_KEY")
     openai_api_key = os.getenv("OPENAI_API_KEY")
     api_key = minimax_api_key or llm_api_key or openai_api_key
     if not api_key:
         raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
-
-    # Prefer provider-specific defaults so a standalone MINIMAX_API_KEY works
-    # without also requiring the caller to configure a custom base URL.
     if minimax_api_key and api_key == minimax_api_key:
         base_url = (
             os.getenv("MINIMAX_API_BASE")
@@ -496,7 +493,40 @@ def generate_strategy_code(prompt_text: str):
             or "gpt-4o-mini"
         )
     contract = get_strategy_contract()
-    test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
+    system_prompt = (
+        "你是资深量化工程师。请根据用户要求输出可直接执行的 Python 策略代码。"
+        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>。"
+        "必须定义 run_strategy(context) 函数，且只能使用项目已有的 context 字典结构。"
+        "不要使用 backtrader、talib、context.symbol、context.get_close 之类项目中不存在的 API。"
+    )
+    user_prompt = (
+        f"需求：{prompt_text}\n"
+        "必须遵守这些约束：\n"
+        "1. 只定义 run_strategy(context)。\n"
+        "2. context 可用字段只有：context['stock']、context['snapshots']['daily']、"
+        "context['snapshots']['weekly']、context['indicators']['daily']、context['indicators']['weekly']。\n"
+        "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
+        "4. 返回 dict，至少包含 pass(bool) 和 reason(str)，可选 score、metrics。\n"
+        "5. 数据不足时直接返回 pass=False 和明确原因。\n"
+        "6. 参考模板结构如下：\n"
+        f"{contract['template']}\n"
+        "现在只返回符合这些约束的完整 Python 代码。"
+    )
+    return {
+        "model": model,
+        "base_url": base_url,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
+
+
+def generate_strategy_code(prompt_text: str):
+    minimax_api_key = os.getenv("MINIMAX_API_KEY")
+    llm_api_key = os.getenv("LLM_API_KEY")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    api_key = minimax_api_key or llm_api_key or openai_api_key
+    if not api_key:
+        raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
 
     def extract_code(data: dict) -> str:
         choices = data.get("choices") or []
@@ -514,15 +544,15 @@ def generate_strategy_code(prompt_text: str):
                 content = content[6:].lstrip()
         return content.strip()
 
-    def call_llm(messages, temperature):
+    def call_llm(model_name, base_url, messages, temperature):
         payloads = [
             {
-                "model": model,
+                "model": model_name,
                 "messages": messages,
                 "temperature": temperature,
             },
             {
-                "model": model,
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
                     {"role": "user", "content": messages[-1]["content"]},
@@ -553,31 +583,17 @@ def generate_strategy_code(prompt_text: str):
                     raise
         raise last_error or ValueError("策略生成失败")
 
-    system_prompt = (
-        "你是资深量化工程师。请根据用户要求输出可直接执行的 Python 策略代码。"
-        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>。"
-        "必须定义 run_strategy(context) 函数，且只能使用项目已有的 context 字典结构。"
-        "不要使用 backtrader、talib、context.symbol、context.get_close 之类项目中不存在的 API。"
-    )
-    user_prompt = (
-        f"需求：{prompt_text}\n"
-        "必须遵守这些约束：\n"
-        "1. 只定义 run_strategy(context)。\n"
-        "2. context 可用字段只有：context['stock']、context['snapshots']['daily']、"
-        "context['snapshots']['weekly']、context['indicators']['daily']、context['indicators']['weekly']。\n"
-        "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
-        "4. 返回 dict，至少包含 pass(bool) 和 reason(str)，可选 score、metrics。\n"
-        "5. 数据不足时直接返回 pass=False 和明确原因。\n"
-        "6. 参考模板结构如下：\n"
-        f"{contract['template']}\n"
-        "现在只返回符合这些约束的完整 Python 代码。"
-    )
+    llm_context = build_strategy_generation_context(prompt_text)
+    test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
+    contract = get_strategy_contract()
 
     generated = extract_code(
         call_llm(
+            llm_context["model"],
+            llm_context["base_url"],
             [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "system", "content": llm_context["system_prompt"]},
+                {"role": "user", "content": llm_context["user_prompt"]},
             ],
             0.2,
         )
@@ -595,8 +611,10 @@ def generate_strategy_code(prompt_text: str):
         )
         generated = extract_code(
             call_llm(
+                llm_context["model"],
+                llm_context["base_url"],
                 [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": llm_context["system_prompt"]},
                     {"role": "user", "content": repair_prompt},
                 ],
                 0.1,
@@ -1948,6 +1966,28 @@ async def generate_strategy_api(request: Request):
     try:
         code = generate_strategy_code(prompt_text)
         return {"ok": True, "code": code}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/strategies/generate-context")
+async def generate_strategy_context_api(request: Request):
+    payload = await request.json()
+    prompt_text = (payload.get("prompt") or "").strip()
+    if not prompt_text:
+        return JSONResponse({"ok": False, "error": "请输入策略描述"}, status_code=400)
+    try:
+        llm_context = build_strategy_generation_context(prompt_text)
+        copy_text = (
+            "请根据下面要求生成符合项目约定的 Python 策略代码，只返回代码。\n\n"
+            f"模型建议：{llm_context['model']}\n"
+            f"接口地址参考：{llm_context['base_url']}/chat/completions\n\n"
+            "System Prompt:\n"
+            f"{llm_context['system_prompt']}\n\n"
+            "User Prompt:\n"
+            f"{llm_context['user_prompt']}\n"
+        )
+        return {"ok": True, "context": llm_context, "copy_text": copy_text}
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 

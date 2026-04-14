@@ -125,7 +125,10 @@
         </select>
         <div id="aiPromptWrap" style="display:none;">
             <textarea id="strategyPrompt" placeholder="例如：找出最近20日站上 MA20，且日线 MACD 金叉，同时周线未出现 4 连阳的股票"></textarea>
-            <button class="btn green" id="generateCodeBtn" type="button" onclick="generateCode()">生成代码</button>
+            <div class="btn-row" style="margin-bottom:10px;">
+                <button class="btn green" id="generateCodeBtn" type="button" onclick="generateCode()">生成代码</button>
+                <button class="btn secondary" id="copyPromptBtn" type="button" onclick="copyLlmContext()">复制 LLM 上下文</button>
+            </div>
             <div id="generateStatus" class="generate-status" aria-live="polite">
                 <span class="spinner" aria-hidden="true"></span>
                 <span id="generateStatusText">正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 0 秒</span>
@@ -462,6 +465,37 @@
                 sheetLoadingText.textContent = originalSheetLoadingText;
                 sheetMask.classList.remove('show');
                 status.classList.remove('show');
+            }
+        }
+
+        async function copyLlmContext() {
+            const prompt = document.getElementById('strategyPrompt').value.trim();
+            if (!prompt) {
+                alert('请先输入策略描述');
+                return;
+            }
+            const button = document.getElementById('copyPromptBtn');
+            const originalLabel = button.textContent;
+            button.disabled = true;
+            button.textContent = '准备中...';
+            try {
+                const res = await fetch('/api/strategies/generate-context', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || '获取上下文失败');
+                    return;
+                }
+                await navigator.clipboard.writeText(data.copy_text || '');
+                alert('已复制 LLM 上下文，你可以粘贴到外部模型中生成策略代码。');
+            } catch (error) {
+                alert('复制失败，请稍后重试');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalLabel;
             }
         }
 
