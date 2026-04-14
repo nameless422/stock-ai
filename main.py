@@ -495,70 +495,118 @@ def generate_strategy_code(prompt_text: str):
             or os.getenv("OPENAI_MODEL")
             or "gpt-4o-mini"
         )
-    payloads = [
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
-                        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>、分析过程或任何额外文本。"
-                        "必须定义 run_strategy(context) 函数。"
-                        "返回 dict，包含 pass(bool)、reason(str)，可选 score、metrics。"
-                    ),
-                },
-                {"role": "user", "content": prompt_text},
-            ],
-            "temperature": 0.2,
-        },
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
-                {"role": "user", "content": prompt_text},
-            ],
-            "temperature": 0.1,
-        },
-    ]
+    contract = get_strategy_contract()
+    test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
 
-    last_error = None
-    with httpx.Client(timeout=90) as client:
-        for index, payload in enumerate(payloads):
-            try:
-                response = client.post(
-                    f"{base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-                break
-            except httpx.HTTPStatusError as exc:
-                last_error = exc
-                if exc.response.status_code == 529 and index < len(payloads) - 1:
-                    sleep(1)
-                    continue
-                raise
-        else:
-            raise last_error or ValueError("策略生成失败")
-    choices = data.get("choices") or []
-    if not choices:
-        raise ValueError(f"策略生成返回异常，缺少 choices: {data}")
-    message = choices[0].get("message") or {}
-    content = (message.get("content") or "").strip()
-    if not content:
-        raise ValueError(f"策略生成返回空内容: {data}")
-    if "<think>" in content and "</think>" in content:
-        content = content.split("</think>", 1)[1].strip()
-    if content.startswith("```"):
-        content = content.strip("`").strip()
-        if content.startswith("python"):
-            content = content[6:].lstrip()
-    return content
+    def extract_code(data: dict) -> str:
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError(f"策略生成返回异常，缺少 choices: {data}")
+        message = choices[0].get("message") or {}
+        content = (message.get("content") or "").strip()
+        if not content:
+            raise ValueError(f"策略生成返回空内容: {data}")
+        if "<think>" in content and "</think>" in content:
+            content = content.split("</think>", 1)[1].strip()
+        if content.startswith("```"):
+            content = content.strip("`").strip()
+            if content.startswith("python"):
+                content = content[6:].lstrip()
+        return content.strip()
+
+    def call_llm(messages, temperature):
+        payloads = [
+            {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+            },
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
+                    {"role": "user", "content": messages[-1]["content"]},
+                ],
+                "temperature": 0.1,
+            },
+        ]
+
+        last_error = None
+        with httpx.Client(timeout=90) as client:
+            for index, payload in enumerate(payloads):
+                try:
+                    response = client.post(
+                        f"{base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    return response.json()
+                except httpx.HTTPStatusError as exc:
+                    last_error = exc
+                    if exc.response.status_code == 529 and index < len(payloads) - 1:
+                        sleep(1)
+                        continue
+                    raise
+        raise last_error or ValueError("策略生成失败")
+
+    system_prompt = (
+        "你是资深量化工程师。请根据用户要求输出可直接执行的 Python 策略代码。"
+        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>。"
+        "必须定义 run_strategy(context) 函数，且只能使用项目已有的 context 字典结构。"
+        "不要使用 backtrader、talib、context.symbol、context.get_close 之类项目中不存在的 API。"
+    )
+    user_prompt = (
+        f"需求：{prompt_text}\n"
+        "必须遵守这些约束：\n"
+        "1. 只定义 run_strategy(context)。\n"
+        "2. context 可用字段只有：context['stock']、context['snapshots']['daily']、"
+        "context['snapshots']['weekly']、context['indicators']['daily']、context['indicators']['weekly']。\n"
+        "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
+        "4. 返回 dict，至少包含 pass(bool) 和 reason(str)，可选 score、metrics。\n"
+        "5. 数据不足时直接返回 pass=False 和明确原因。\n"
+        "6. 参考模板结构如下：\n"
+        f"{contract['template']}\n"
+        "现在只返回符合这些约束的完整 Python 代码。"
+    )
+
+    generated = extract_code(
+        call_llm(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            0.2,
+        )
+    )
+
+    validation = run_strategy_code(generated, test_context)
+    if validation.get("error"):
+        repair_prompt = (
+            "下面这段策略代码不符合项目约定，请修复后只返回完整 Python 代码。\n"
+            f"错误：{validation.get('reason', '未知错误')}\n"
+            "项目约定：只能访问 context['stock']、context['snapshots']、context['indicators']；"
+            "必须定义 run_strategy(context)；返回 dict。\n"
+            f"参考模板：\n{contract['template']}\n"
+            f"待修复代码：\n{generated}"
+        )
+        generated = extract_code(
+            call_llm(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": repair_prompt},
+                ],
+                0.1,
+            )
+        )
+        validation = run_strategy_code(generated, test_context)
+        if validation.get("error"):
+            raise ValueError(validation.get("reason", "策略代码校验失败"))
+
+    return generated
 
 # ========== 虚拟炒股模块 ==========
 
