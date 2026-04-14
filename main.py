@@ -493,6 +493,64 @@ def build_strategy_generation_context(prompt_text: str):
             or "gpt-4o-mini"
         )
     contract = get_strategy_contract()
+    allowed_fields = [
+        "context['stock']['code']",
+        "context['stock']['name']",
+        "context['stock']['symbol']",
+        "context['data']['daily']['dates']",
+        "context['data']['daily']['open']",
+        "context['data']['daily']['close']",
+        "context['data']['daily']['high']",
+        "context['data']['daily']['low']",
+        "context['data']['daily']['volume']",
+        "context['data']['weekly']['dates']",
+        "context['data']['weekly']['open']",
+        "context['data']['weekly']['close']",
+        "context['data']['weekly']['high']",
+        "context['data']['weekly']['low']",
+        "context['data']['weekly']['volume']",
+        "context['snapshots']['daily']['enough_data']",
+        "context['snapshots']['daily']['rows']",
+        "context['snapshots']['daily']['latest_open']",
+        "context['snapshots']['daily']['latest_close']",
+        "context['snapshots']['daily']['latest_high']",
+        "context['snapshots']['daily']['latest_low']",
+        "context['snapshots']['daily']['current_volume']",
+        "context['snapshots']['daily']['max_volume_3m']",
+        "context['snapshots']['daily']['latest_dif']",
+        "context['snapshots']['daily']['latest_dea']",
+        "context['snapshots']['daily']['latest_macd_bar']",
+        "context['snapshots']['weekly']['enough_data']",
+        "context['snapshots']['weekly']['rows']",
+        "context['snapshots']['weekly']['latest_open']",
+        "context['snapshots']['weekly']['latest_close']",
+        "context['snapshots']['weekly']['consecutive_red']",
+        "context['snapshots']['weekly']['recent_red_bars']",
+        "context['indicators']['daily']['ma5']",
+        "context['indicators']['daily']['ma10']",
+        "context['indicators']['daily']['ma20']",
+        "context['indicators']['daily']['ma60']",
+        "context['indicators']['daily']['macd']['dif']",
+        "context['indicators']['daily']['macd']['dea']",
+        "context['indicators']['daily']['macd']['bar']",
+        "context['indicators']['weekly']['ma5']",
+        "context['indicators']['weekly']['ma10']",
+        "context['indicators']['weekly']['ma20']",
+        "context['indicators']['weekly']['macd']['dif']",
+        "context['indicators']['weekly']['macd']['dea']",
+        "context['indicators']['weekly']['macd']['bar']",
+    ]
+    forbidden_fields = [
+        "context['snapshots']['daily']['prev_close']",
+        "context['snapshots']['daily']['change']",
+        "context.symbol",
+        "context.get_close(...)",
+        "context.close",
+        "backtrader",
+        "talib / ta-lib",
+    ]
+    allowed_fields_text = "\n".join(f"- {item}" for item in allowed_fields)
+    forbidden_fields_text = "\n".join(f"- {item}" for item in forbidden_fields)
     system_prompt = (
         "你是资深量化工程师。请根据用户要求输出可直接执行的 Python 策略代码。"
         "只能返回代码，不要解释，不要 Markdown，不要输出 <think>。"
@@ -503,12 +561,14 @@ def build_strategy_generation_context(prompt_text: str):
         f"需求：{prompt_text}\n"
         "必须遵守这些约束：\n"
         "1. 只定义 run_strategy(context)。\n"
-        "2. context 可用字段只有：context['stock']、context['snapshots']['daily']、"
-        "context['snapshots']['weekly']、context['indicators']['daily']、context['indicators']['weekly']。\n"
+        "2. 只能使用下面这些已存在字段，不能猜测或发明新字段：\n"
+        f"{allowed_fields_text}\n"
         "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
         "4. 返回 dict，至少包含 pass(bool) 和 reason(str)，可选 score、metrics。\n"
         "5. 数据不足时直接返回 pass=False 和明确原因。\n"
-        "6. 参考模板结构如下：\n"
+        "6. 严禁使用下面这些不存在或不允许的字段/库：\n"
+        f"{forbidden_fields_text}\n"
+        "7. 参考模板结构如下：\n"
         f"{contract['template']}\n"
         "现在只返回符合这些约束的完整 Python 代码。"
     )
