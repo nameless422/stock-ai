@@ -383,10 +383,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            min-width: 0;
-            overflow: hidden;
         }
-        .pager-btn, .page-chip {
+        .pager-btn {
             min-height: 38px;
             border-radius: 12px;
             border: 1px solid rgba(130, 157, 196, 0.12);
@@ -395,23 +393,8 @@
             font-size: 12px;
             padding: 0 10px;
             box-sizing: border-box;
-        }
-        .pager-btn {
             flex: 1 1 0;
             min-width: 0;
-        }
-        .page-chip {
-            display: inline-flex;
-            flex: 0 0 auto;
-            align-items: center;
-            justify-content: center;
-            background: rgba(9, 16, 29, 0.85);
-            min-width: 64px;
-            padding: 0 12px;
-            white-space: nowrap;
-        }
-        .page-chip.full {
-            display: inline-flex;
         }
         .empty {
             padding: 24px 12px;
@@ -451,13 +434,9 @@
             .pager-actions {
                 gap: 6px;
             }
-            .pager-btn, .page-chip {
+            .pager-btn {
                 min-height: 36px;
                 font-size: 11px;
-            }
-            .page-chip {
-                min-width: 58px;
-                padding: 0 10px;
             }
         }
     </style>
@@ -525,7 +504,6 @@
                             <div class="pager-info" id="resultPagerInfo"></div>
                             <div class="pager-actions">
                                 <button class="pager-btn" id="resultPrevBtn" onclick="goToResultPage(resultState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="resultPageChip">1 / 1</span>
                                 <button class="pager-btn" id="resultNextBtn" onclick="goToResultPage(resultState.page + 1)">下一页</button>
                             </div>
                         </div>
@@ -549,7 +527,6 @@
                             <div class="pager-info" id="historyPagerInfo"></div>
                             <div class="pager-actions">
                                 <button class="pager-btn" id="historyPrevBtn" onclick="goToHistoryPage(historyState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="historyPageChip">1 / 1</span>
                                 <button class="pager-btn" id="historyNextBtn" onclick="goToHistoryPage(historyState.page + 1)">下一页</button>
                             </div>
                         </div>
@@ -573,7 +550,6 @@
                             <div class="pager-info" id="detailPagerInfo"></div>
                             <div class="pager-actions">
                                 <button class="pager-btn" id="detailPrevBtn" onclick="goToDetailPage(detailState.page - 1)">上一页</button>
-                                <span class="page-chip full" id="detailPageChip">1 / 1</span>
                                 <button class="pager-btn" id="detailNextBtn" onclick="goToDetailPage(detailState.page + 1)">下一页</button>
                             </div>
                         </div>
@@ -704,7 +680,6 @@
             document.getElementById(baseId + 'PagerInfo').innerHTML = `<span>共 ${total} 条，每页 ${pageSize} 条</span><span>第 ${pageState.page} / ${pageState.totalPages} 页</span>`;
             document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
             document.getElementById(baseId + 'NextBtn').disabled = pageState.page === pageState.totalPages;
-            document.getElementById(baseId + 'PageChip').textContent = `${pageState.page} / ${pageState.totalPages}`;
         }
 
         function updateResultPager() {
