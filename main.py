@@ -502,21 +502,13 @@ def generate_strategy_code(prompt_text: str):
                 {
                     "role": "system",
                     "content": (
-                        "你是资深量化工程师，只返回可执行的 Python 代码。"
-                        "必须定义 run_strategy(context) 并返回包含 pass、reason 的 dict。"
-                        "不要输出 Markdown、解释或 <think>。"
+                        "你是资深量化工程师。请根据用户要求，输出可直接执行的 Python 策略代码。"
+                        "只能返回代码，不要解释，不要 Markdown，不要输出 <think>、分析过程或任何额外文本。"
+                        "必须定义 run_strategy(context) 函数。"
+                        "返回 dict，包含 pass(bool)、reason(str)，可选 score、metrics。"
                     ),
                 },
-                {
-                    "role": "user",
-                    "content": (
-                        f"策略说明：{prompt_text}\n"
-                        "可用上下文：context['stock']、context['snapshots']、context['indicators']。\n"
-                        "数据不足时返回 pass=False。\n"
-                        "必须使用 context['a']['b'] 方式访问。\n"
-                        "只返回完整 Python 代码。"
-                    ),
-                },
+                {"role": "user", "content": prompt_text},
             ],
             "temperature": 0.2,
         },
@@ -524,14 +516,7 @@ def generate_strategy_code(prompt_text: str):
             "model": model,
             "messages": [
                 {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
-                {
-                    "role": "user",
-                    "content": (
-                        f"{prompt_text}\n"
-                        "使用 context['snapshots'] 或 context['indicators']，"
-                        "返回 {'pass': bool, 'reason': str, 'score': number, 'metrics': dict}。"
-                    ),
-                },
+                {"role": "user", "content": prompt_text},
             ],
             "temperature": 0.1,
         },
