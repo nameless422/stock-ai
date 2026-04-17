@@ -20,9 +20,12 @@ import db.compat as sqlite3
 import os
 import hashlib
 import secrets
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+from zoneinfo import ZoneInfo
 from db.schema import init_db as initialize_app_db
 from db.schema import init_vt_db as initialize_vt_db
+from screening_core import SwitchingMarketDataSource, stock_code_to_symbol
 from screening_tasks import ScreeningTaskHandler
 from task_system import TaskManager
 
@@ -48,6 +51,13 @@ SCREENING_MAX_WORKERS = max(4, min(24, int(os.getenv("SCREENING_MAX_WORKERS", "1
 SCREENING_SUBMIT_BATCH = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "200")))
 SCREENING_SAVE_INTERVAL = max(10, int(os.getenv("SCREENING_SAVE_INTERVAL", "25")))
 TASK_MANAGER = TaskManager(DB_PATH)
+MARKET_TZ = ZoneInfo("Asia/Shanghai")
+MARKET_PERIOD_CONFIG = {
+    "daily": {"period_key": "day", "payload_key": "qfqday", "default_bars": 180, "eastmoney_klt": "101"},
+    "weekly": {"period_key": "week", "payload_key": "qfqweek", "default_bars": 60, "eastmoney_klt": "102"},
+    "monthly": {"period_key": "month", "payload_key": "qfqmonth", "default_bars": 180, "eastmoney_klt": "103"},
+}
+MARKET_SYNC_LOCK = threading.Lock()
 
 def save_screening_run(run_token, run_date, run_time, total_stocks, matched_count, status, results, target_info=None, failure_summary=""):
     conn = sqlite3.connect(DB_PATH)
@@ -985,13 +995,292 @@ def enqueue_screening_task(target_type: Optional[str] = None, target_id: Optiona
     )
 
 
+def get_market_now() -> datetime:
+    return datetime.now(MARKET_TZ)
+
+
+def is_market_trading_day(now: Optional[datetime] = None) -> bool:
+    current = (now or get_market_now()).astimezone(MARKET_TZ)
+    return current.weekday() < 5
+
+
+def is_market_open(now: Optional[datetime] = None) -> bool:
+    current = (now or get_market_now()).astimezone(MARKET_TZ)
+    if not is_market_trading_day(current):
+        return False
+
+    current_minutes = current.hour * 60 + current.minute
+    return (9 * 60 + 30) <= current_minutes < (11 * 60 + 30) or (13 * 60) <= current_minutes < (15 * 60)
+
+
+def next_trading_day_run(hour: int, minute: int, now: Optional[datetime] = None) -> datetime:
+    current = (now or get_market_now()).astimezone(MARKET_TZ)
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if current >= target:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    return target
+
+
+def next_daily_run(hour: int, minute: int, now: Optional[datetime] = None) -> datetime:
+    current = (now or get_market_now()).astimezone(MARKET_TZ)
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if current >= target:
+        target += timedelta(days=1)
+    return target
+
+
+def _fetch_tencent_klines(symbol: str, period: str, bars: Optional[int] = None, adjust: str = "qfq") -> list:
+    config = MARKET_PERIOD_CONFIG.get(period, MARKET_PERIOD_CONFIG["daily"])
+    request_bars = bars or config["default_bars"]
+    url = (
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?_var=kline_{config['period_key']}{adjust}&param={symbol},{config['period_key']},,,{request_bars},{adjust}&r=0.1"
+    )
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(url)
+            text = resp.text
+        json_start = text.find("=") + 1
+        data = json.loads(text[json_start:])
+        if data.get("code") != 0:
+            return []
+        stock_data = data.get("data", {}).get(symbol, {})
+        return stock_data.get(config["payload_key"], []) or []
+    except Exception:
+        return []
+
+
+def _eastmoney_market_code(symbol: str) -> Optional[int]:
+    if symbol.startswith("sz"):
+        return 0
+    if symbol.startswith("sh"):
+        return 1
+    if symbol.startswith("bj"):
+        return 0
+    return None
+
+
+def _fetch_eastmoney_klines(symbol: str, period: str, bars: Optional[int] = None) -> list:
+    config = MARKET_PERIOD_CONFIG.get(period, MARKET_PERIOD_CONFIG["daily"])
+    market = _eastmoney_market_code(symbol)
+    if market is None:
+        return []
+
+    params = {
+        "secid": f"{market}.{symbol[2:]}",
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+        "klt": config["eastmoney_klt"],
+        "fqt": "1",
+        "end": "20500101",
+        "lmt": str(bars or config["default_bars"]),
+    }
+
+    try:
+        with httpx.Client(
+            timeout=15,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://quote.eastmoney.com/",
+            },
+        ) as client:
+            response = client.get(
+                "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        rows = (payload.get("data") or {}).get("klines") or []
+        result = []
+        for row in rows:
+            parts = str(row).split(",")
+            if len(parts) < 6:
+                continue
+            result.append(parts[:6])
+        return result
+    except Exception:
+        return []
+
+
+def _fetch_remote_klines(stock_code: str, period: str, bars: Optional[int] = None, adjust: str = "qfq") -> list:
+    symbol = stock_code_to_symbol(stock_code)
+    if not symbol:
+        return []
+
+    if period == "daily":
+        rows = SwitchingMarketDataSource().get_daily_klines(symbol, bars or MARKET_PERIOD_CONFIG["daily"]["default_bars"])
+        if rows:
+            return rows
+    elif period == "weekly":
+        rows = SwitchingMarketDataSource().get_weekly_klines(symbol)
+        if rows:
+            return rows[-(bars or MARKET_PERIOD_CONFIG["weekly"]["default_bars"]):]
+
+    rows = _fetch_tencent_klines(symbol, period, bars, adjust=adjust)
+    if rows:
+        return rows
+    return _fetch_eastmoney_klines(symbol, period, bars)
+
+
+def _load_cached_klines(stock_code: str, period: str, adjust: str = "qfq", limit: Optional[int] = None) -> list:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    row = c.execute(
+        """
+        SELECT payload
+        FROM market_kline_cache
+        WHERE stock_code = ? AND period = ? AND adjust_type = ?
+        """,
+        (stock_code, period, adjust),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return []
+
+    try:
+        payload = json.loads(row["payload"])
+    except Exception:
+        return []
+
+    if not isinstance(payload, list):
+        return []
+    return payload[-limit:] if limit else payload
+
+
+def _save_cached_klines(stock_code: str, symbol: str, period: str, klines: list, adjust: str = "qfq") -> None:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM market_kline_cache WHERE stock_code = ? AND period = ? AND adjust_type = ?",
+        (stock_code, period, adjust),
+    )
+    c.execute(
+        """
+        INSERT INTO market_kline_cache
+            (stock_code, symbol, period, adjust_type, bars_count, payload, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (stock_code, symbol, period, adjust, len(klines), json.dumps(klines, ensure_ascii=False)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_kline_rows(
+    stock_code: str,
+    period: str = "daily",
+    bars: Optional[int] = None,
+    adjust: str = "qfq",
+    prefer_remote: Optional[bool] = None,
+) -> list:
+    symbol = stock_code_to_symbol(stock_code)
+    if not symbol:
+        return []
+
+    config = MARKET_PERIOD_CONFIG.get(period, MARKET_PERIOD_CONFIG["daily"])
+    limit = bars or config["default_bars"]
+    remote_first = is_market_open() if prefer_remote is None else prefer_remote
+
+    if remote_first:
+        remote_rows = _fetch_remote_klines(stock_code, period, limit, adjust=adjust)
+        if remote_rows:
+            _save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+            return remote_rows[-limit:]
+        return _load_cached_klines(stock_code, period, adjust=adjust, limit=limit)
+
+    cached_rows = _load_cached_klines(stock_code, period, adjust=adjust, limit=limit)
+    if cached_rows:
+        return cached_rows
+
+    remote_rows = _fetch_remote_klines(stock_code, period, limit, adjust=adjust)
+    if remote_rows:
+        _save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+        return remote_rows[-limit:]
+    return []
+
+
+def sync_stock_kline_cache(stock_code: str, periods: Optional[list] = None) -> dict:
+    symbol = stock_code_to_symbol(stock_code)
+    if not symbol:
+        return {"stock_code": stock_code, "updated": 0, "error": "不支持的股票代码"}
+
+    updated = 0
+    errors = []
+    for period in periods or ["daily", "weekly"]:
+        config = MARKET_PERIOD_CONFIG.get(period)
+        if not config:
+            continue
+        rows = _fetch_remote_klines(stock_code, period, config["default_bars"])
+        if not rows:
+            errors.append(period)
+            continue
+        _save_cached_klines(stock_code, symbol, period, rows)
+        updated += 1
+
+    return {"stock_code": stock_code, "updated": updated, "error_periods": errors}
+
+
+def sync_market_cache_for_all_stocks() -> dict:
+    if not MARKET_SYNC_LOCK.acquire(blocking=False):
+        print("[行情同步] 跳过：已有同步任务在执行")
+        return {"ok": False, "error": "已有同步任务在执行"}
+
+    try:
+        stocks = SwitchingMarketDataSource().list_stocks()
+        if not stocks:
+            print("[行情同步] 股票列表为空")
+            return {"ok": False, "error": "股票列表为空"}
+
+        total = len(stocks)
+        success = 0
+        partial = 0
+        failed = 0
+        max_workers = min(max(4, SCREENING_MAX_WORKERS), 16)
+        print(f"[行情同步] 开始同步 {total} 只股票，workers={max_workers}")
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(sync_stock_kline_cache, stock["code"], ["daily", "weekly", "monthly"]): stock
+                for stock in stocks
+            }
+
+            for idx, future in enumerate(as_completed(future_map), start=1):
+                stock = future_map[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    failed += 1
+                    print(f"[行情同步] {stock['code']} {stock['name']} 同步失败: {exc}")
+                    continue
+
+                updated = result.get("updated", 0)
+                if updated >= 3:
+                    success += 1
+                elif updated > 0:
+                    partial += 1
+                else:
+                    failed += 1
+
+                if idx % 200 == 0 or idx == total:
+                    print(f"[行情同步] 进度 {idx}/{total}，成功 {success}，部分成功 {partial}，失败 {failed}")
+
+        summary = {"ok": True, "total": total, "success": success, "partial": partial, "failed": failed}
+        print(f"[行情同步] 完成: {summary}")
+        return summary
+    finally:
+        MARKET_SYNC_LOCK.release()
+
+
 def scheduled_screening():
     """定时选股任务（每天7:00执行）"""
     while True:
-        now = datetime.now()
-        target = now.replace(hour=7, minute=0, second=0, microsecond=0)
-        if now.hour >= 7:
-            target += timedelta(days=1)
+        now = get_market_now()
+        target = next_trading_day_run(7, 0, now=now)
         seconds = (target - now).total_seconds()
 
         print(f"[选股定时任务] 下次执行: {target.strftime('%Y-%m-%d %H:%M:%S')}, 等待 {int(seconds)} 秒")
@@ -1030,10 +1319,8 @@ def cleanup_old_data():
 def scheduled_cleanup():
     """定时清理任务（每天凌晨3:00执行）"""
     while True:
-        now = datetime.now()
-        target = now.replace(hour=3, minute=0, second=0, microsecond=0)
-        if now.hour >= 3:
-            target += timedelta(days=1)
+        now = get_market_now()
+        target = next_daily_run(3, 0, now=now)
         seconds = (target - now).total_seconds()
         
         print(f"[清理任务] 下次执行: {target.strftime('%Y-%m-%d %H:%M:%S')}, 等待 {int(seconds)} 秒")
@@ -1041,8 +1328,22 @@ def scheduled_cleanup():
         
         cleanup_old_data()
 
+
+def scheduled_market_cache_sync():
+    """每天收盘后同步全市场K线缓存。"""
+    while True:
+        now = get_market_now()
+        target = next_trading_day_run(15, 30, now=now)
+        seconds = (target - now).total_seconds()
+
+        print(f"[行情同步任务] 下次执行: {target.strftime('%Y-%m-%d %H:%M:%S')}, 等待 {int(seconds)} 秒")
+        time.sleep(seconds)
+
+        sync_market_cache_for_all_stocks()
+
 threading.Thread(target=scheduled_screening, daemon=True).start()
 threading.Thread(target=scheduled_cleanup, daemon=True).start()
+threading.Thread(target=scheduled_market_cache_sync, daemon=True).start()
 
 # 静态文件和模板
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -1109,46 +1410,13 @@ def get_kline_data(stock_code: str, period: str = "daily", adjust: str = "qfq") 
     period: daily / weekly / monthly
     """
     try:
-        if stock_code.startswith("6"):
-            symbol = f"sh{stock_code}"
-        elif stock_code.startswith("0") or stock_code.startswith("3"):
-            symbol = f"sz{stock_code}"
-        else:
-            symbol = f"bj{stock_code}"
-        
-        # 腾讯证券 K线 API
-        # period_key 映射到腾讯的 qfqxxx 格式
-        period_map = {
-            "daily": ("day", "qfqday"),
-            "weekly": ("week", "qfqweek"),
-            "monthly": ("month", "qfqmonth")
-        }
-        period_key, qfq_key = period_map.get(period, ("day", "qfqday"))
-        
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_{period_key}qfq&param={symbol},{period_key},,,180,qfq&r=0.1"
-        
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(url)
-            text = resp.text
-        
-        # 解析: kline_dayqfq={...}
-        json_start = text.find('=') + 1
-        data = json.loads(text[json_start:])
-        
-        if data.get("code") != 0:
-            return {"error": "获取K线数据失败"}
-        
-        stock_data = data.get("data", {}).get(symbol, {})
-        klines = stock_data.get(qfq_key, [])
-        
+        klines = get_kline_rows(stock_code, period=period, bars=180, adjust=adjust)
         if not klines:
             return {"error": "暂无数据"}
-        
-        # 取最近180条
+
         klines = klines[-180:]
-        
         dates, opens, closes, highs, lows, volumes = [], [], [], [], [], []
-        
+
         for item in klines:
             if len(item) >= 6:
                 dates.append(item[0])
