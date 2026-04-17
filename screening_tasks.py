@@ -1,7 +1,9 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import os
 
+import httpx
 from screening_core import StrategyScreeningFilter, SwitchingMarketDataSource, build_failure_summary
 
 
@@ -21,6 +23,72 @@ class ScreeningTaskHandler:
         self.submit_batch = submit_batch
         self.save_interval = save_interval
         self.data_source_factory = data_source_factory
+
+    def _build_ai_summary(self, target_info: dict, total: int, matched_count: int, failure_reason_counts: Counter, miss_log_samples: list[str]) -> str:
+        api_key = os.getenv("MINIMAX_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return ""
+
+        if os.getenv("MINIMAX_API_KEY"):
+            base_url = (os.getenv("MINIMAX_API_BASE") or os.getenv("LLM_API_BASE") or "https://api.minimax.io/v1").rstrip("/")
+            model = os.getenv("MINIMAX_MODEL") or os.getenv("LLM_MODEL") or "MiniMax-M2.5"
+        else:
+            base_url = (
+                os.getenv("LLM_API_BASE")
+                or os.getenv("OPENAI_BASE_URL")
+                or os.getenv("OPENAI_API_BASE")
+                or "https://api.openai.com/v1"
+            ).rstrip("/")
+            model = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+
+        reasons_text = "\n".join(
+            f"- {reason}: {count}"
+            for reason, count in failure_reason_counts.most_common(20)
+        ) or "- 无未命中原因"
+        samples_text = "\n".join(f"- {item}" for item in miss_log_samples[:80]) or "- 无原始日志"
+        messages = [
+            {
+                "role": "system",
+                "content": "你是资深量化排障助手。请根据任务扫描日志总结最关键的未命中原因、异常模式、可能的修复方向。输出中文纯文本，控制在6行内。",
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"目标: {target_info.get('target_name')}\n"
+                    f"扫描总数: {total}\n"
+                    f"命中数: {matched_count}\n"
+                    f"聚合原因:\n{reasons_text}\n"
+                    f"原始未命中样本:\n{samples_text}\n"
+                    "请总结：1. 最主要失败模式 2. 是否像策略代码错误/数据不足/数据源异常 3. 下一步建议。"
+                ),
+            },
+        ]
+        try:
+            with httpx.Client(timeout=60) as client:
+                response = client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0.1,
+                    },
+                )
+                response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return ""
+            message = choices[0].get("message") or {}
+            content = str(message.get("content") or "").strip()
+            if content.startswith("```"):
+                content = content.strip("`").strip()
+            return content
+        except Exception:
+            return ""
 
     def __call__(self, task: dict, context) -> dict:
         payload = task.get("payload") or {}
@@ -71,6 +139,7 @@ class ScreeningTaskHandler:
 
             stock_filter = StrategyScreeningFilter(data_source, target_info)
             failure_reason_counts = Counter()
+            miss_log_samples = []
             processed = 0
             save_counter = 0
             batch_size = min(self.submit_batch, total)
@@ -103,7 +172,27 @@ class ScreeningTaskHandler:
                             results.append(item)
                             save_counter += 1
                         else:
-                            failure_reason_counts[str(item.get("reason", "")).strip() or "未命中"] += 1
+                            reason = str(item.get("reason", "")).strip() or "未命中"
+                            failure_reason_counts[reason] += 1
+                            miss_log = f"{item.get('code', '-')}\t{item.get('name', '-')}\t{reason}"
+                            context.log(miss_log, level="warn")
+                            if len(miss_log_samples) < 120:
+                                miss_log_samples.append(miss_log)
+                            if item.get("error"):
+                                error_detail = str(item.get("traceback") or item.get("error") or reason).strip()
+                                context.log(f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{error_detail}", level="error")
+                            for strategy_result in ((item.get("payload") or {}).get("strategy_results") or []):
+                                if not strategy_result.get("error"):
+                                    continue
+                                strategy_error = str(
+                                    strategy_result.get("traceback")
+                                    or strategy_result.get("reason")
+                                    or "策略执行异常"
+                                ).strip()
+                                context.log(
+                                    f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{strategy_result.get('strategy_name', '-')}\t{strategy_error}",
+                                    level="error",
+                                )
 
                         if processed % 10 == 0 or processed >= total:
                             context.set_progress(
@@ -131,6 +220,13 @@ class ScreeningTaskHandler:
 
             results.sort(key=lambda item: item.get("current_vol", 0), reverse=True)
             failure_summary = build_failure_summary(failure_reason_counts)
+            ai_summary = self._build_ai_summary(
+                target_info=target_info,
+                total=total,
+                matched_count=len(results),
+                failure_reason_counts=failure_reason_counts,
+                miss_log_samples=miss_log_samples,
+            )
             self.run_saver(
                 run_token,
                 run_date,
@@ -148,6 +244,8 @@ class ScreeningTaskHandler:
             context.log(summary)
             if failure_summary:
                 context.log(f"主要未命中原因: {failure_summary}")
+            if ai_summary:
+                context.log(f"AI总结: {ai_summary}")
             return {
                 "summary": summary,
                 "matched_count": len(results),
@@ -155,6 +253,8 @@ class ScreeningTaskHandler:
                 "run_date": run_date,
                 "run_time": run_time,
                 "failure_summary": failure_summary,
+                "ai_summary": ai_summary,
+                "raw_miss_log_count": sum(failure_reason_counts.values()),
                 "target_name": target_info["target_name"],
                 "target_type": target_info["target_type"],
                 "target_id": target_info["target_id"],

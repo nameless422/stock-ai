@@ -306,6 +306,7 @@ class StrategyScreeningFilter:
             result["dif"] = round(daily_snapshot.get("latest_dif", 0), 4)
             result["dea"] = round(daily_snapshot.get("latest_dea", 0), 4)
             result["pass"] = passed
+            result["error"] = any(item.get("error") for item in strategy_results)
             result["matched_strategies"] = matched_names
             result["daily"] = "、".join(matched_names) if matched_names else "未命中策略"
             result["weekly"] = " | ".join(pass_reasons if passed else failed_reasons[:3])

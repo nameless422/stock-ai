@@ -1957,6 +1957,8 @@ async def screener_status(target_type: Optional[str] = None, target_id: Optional
             "status": task.get("status"),
             "progress_message": task.get("progress_message") or "",
             "failure_summary": result.get("failure_summary", ""),
+            "ai_summary": result.get("ai_summary", ""),
+            "raw_miss_log_count": int(result.get("raw_miss_log_count") or 0),
             "error": task.get("error_text", ""),
         }
 
@@ -1972,10 +1974,12 @@ async def screener_status(target_type: Optional[str] = None, target_id: Optional
         "target_id": target_id,
         "target_name": "",
         "status": "",
-        "progress_message": "",
-        "failure_summary": "",
-        "error": "",
-    }
+            "progress_message": "",
+            "failure_summary": "",
+            "ai_summary": "",
+            "raw_miss_log_count": 0,
+            "error": "",
+        }
 
 
 @app.get("/api/tasks")
@@ -2011,6 +2015,9 @@ async def list_tasks_api(
             "result_text": task.get("result_text", ""),
             "matched_count": result.get("matched_count", 0),
             "total_stocks": result.get("total_stocks", 0),
+            "failure_summary": result.get("failure_summary", ""),
+            "ai_summary": result.get("ai_summary", ""),
+            "raw_miss_log_count": int(result.get("raw_miss_log_count") or 0),
             "error_text": task.get("error_text", ""),
             "created_at": task.get("created_at", ""),
             "started_at": task.get("started_at", ""),
@@ -2033,6 +2040,13 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    latest_task = TASK_MANAGER.get_latest_task(
+        task_type="screening",
+        target_type=target_type,
+        target_id=target_id,
+        statuses=["completed", "failed"],
+    )
+    latest_task_result = (latest_task or {}).get("result") or {}
     sql = "SELECT * FROM screening_runs WHERE status = 'completed'"
     params = []
     if target_type:
@@ -2099,6 +2113,8 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
         "target_id": latest["target_id"],
         "target_name": latest["target_name"],
         "failure_summary": latest.get("failure_summary", ""),
+        "ai_summary": latest_task_result.get("ai_summary", ""),
+        "raw_miss_log_count": int(latest_task_result.get("raw_miss_log_count") or 0),
         "results": results,
     }
 
@@ -2109,6 +2125,13 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    latest_task = TASK_MANAGER.get_latest_task(
+        task_type="screening",
+        target_type=target_type,
+        target_id=target_id,
+        statuses=["completed", "failed"],
+    )
+    latest_task_result = (latest_task or {}).get("result") or {}
     sql = "SELECT * FROM screening_runs WHERE status = 'completed'"
     params = []
     if target_type:
@@ -2134,6 +2157,8 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
             "matched_count": r['matched_count'],
             "status": r['status'],
             "failure_summary": r.get("failure_summary", ""),
+            "ai_summary": latest_task_result.get("ai_summary", "") if r.get("run_token", "") == (latest_task or {}).get("run_token", "") else "",
+            "raw_miss_log_count": int(latest_task_result.get("raw_miss_log_count") or 0) if r.get("run_token", "") == (latest_task or {}).get("run_token", "") else 0,
         })
 
     conn.close()
