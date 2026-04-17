@@ -2,7 +2,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from screening_core import StrategyScreeningFilter, TencentMarketDataSource, build_failure_summary
+from screening_core import StrategyScreeningFilter, SwitchingMarketDataSource, build_failure_summary
 
 
 class ScreeningTaskHandler:
@@ -13,7 +13,7 @@ class ScreeningTaskHandler:
         max_workers: int,
         submit_batch: int,
         save_interval: int,
-        data_source_factory=TencentMarketDataSource,
+        data_source_factory=SwitchingMarketDataSource,
     ):
         self.target_resolver = target_resolver
         self.run_saver = run_saver
