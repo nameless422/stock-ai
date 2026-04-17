@@ -20,10 +20,11 @@ import db.compat as sqlite3
 import os
 import hashlib
 import secrets
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from db.schema import init_db as initialize_app_db
 from db.schema import init_vt_db as initialize_vt_db
+from screening_tasks import ScreeningTaskHandler
+from task_system import TaskManager
 
 from strategy_engine import (
     build_strategy_context,
@@ -46,37 +47,27 @@ DB_PATH = os.getenv(
 SCREENING_MAX_WORKERS = max(4, min(24, int(os.getenv("SCREENING_MAX_WORKERS", "12"))))
 SCREENING_SUBMIT_BATCH = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "200")))
 SCREENING_SAVE_INTERVAL = max(10, int(os.getenv("SCREENING_SAVE_INTERVAL", "25")))
+TASK_MANAGER = TaskManager(DB_PATH)
 
-def save_screening_run(run_date, run_time, total_stocks, matched_count, status, results, target_info=None):
+def save_screening_run(run_token, run_date, run_time, total_stocks, matched_count, status, results, target_info=None, failure_summary=""):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     target_info = target_info or {}
     
-    # 先删除该 run_date+run_time 的旧数据（避免重复）
-    if target_info.get("target_type") and target_info.get("target_id") is not None:
-        c.execute(
-            '''DELETE FROM screening_results
-               WHERE run_date = ? AND run_time = ? AND target_type = ? AND target_id = ?''',
-            (run_date, run_time, target_info.get("target_type"), target_info.get("target_id")),
-        )
-        c.execute(
-            '''DELETE FROM screening_runs
-               WHERE run_date = ? AND run_time = ? AND target_type = ? AND target_id = ?''',
-            (run_date, run_time, target_info.get("target_type"), target_info.get("target_id")),
-        )
-    else:
-        c.execute('DELETE FROM screening_results WHERE run_date = ? AND run_time = ?', (run_date, run_time))
-        c.execute('DELETE FROM screening_runs WHERE run_date = ? AND run_time = ?', (run_date, run_time))
+    c.execute('DELETE FROM screening_results WHERE run_token = ?', (run_token,))
+    c.execute('DELETE FROM screening_runs WHERE run_token = ?', (run_token,))
     
     # 保存运行记录
-    c.execute('''INSERT INTO screening_runs (run_date, run_time, total_stocks, matched_count, status, target_type, target_id, target_name, target_logic)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+    c.execute('''INSERT INTO screening_runs (run_token, run_date, run_time, total_stocks, matched_count, status, failure_summary, target_type, target_id, target_name, target_logic)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (
+                  run_token,
                   run_date,
                   run_time,
                   total_stocks,
                   matched_count,
                   status,
+                  failure_summary,
                   target_info.get("target_type"),
                   target_info.get("target_id"),
                   target_info.get("target_name"),
@@ -91,9 +82,10 @@ def save_screening_run(run_date, run_time, total_stocks, matched_count, status, 
             continue
         seen.add(code)
         c.execute('''INSERT INTO screening_results 
-                     (run_date, run_time, stock_code, stock_name, daily_condition, weekly_condition, current_volume, max_volume_3m, dif, dea, target_type, target_id, target_name, matched_strategies, result_payload, score)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                     (run_token, run_date, run_time, stock_code, stock_name, daily_condition, weekly_condition, current_volume, max_volume_3m, dif, dea, target_type, target_id, target_name, matched_strategies, result_payload, score)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                   (
+                      run_token,
                       run_date,
                       run_time,
                       code,
@@ -957,355 +949,41 @@ def get_account_detail(account_id: int) -> dict:
 
 # 初始化数据库
 initialize_app_db(DB_PATH)
-
-# 选股结果缓存（内存）
-SCREENING_RESULT = {
-    "time": "",
-    "total_stocks": 0,
-    "processed": 0,
-    "matched_count": 0,
-    "results": [],
-    "running": False,
-    "target_type": "",
-    "target_id": None,
-    "target_name": "",
-    "error": "",
-}
-
-# ========== 选股模块 ==========
-
-def get_all_stocks() -> list:
-    """获取全量A股列表"""
-    try:
-        from urllib.request import Request, urlopen
-
-        stocks = []
-        seen = set()
-        page = 1
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://finance.sina.com.cn",
-        }
-        base_url = (
-            "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-            "Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1"
-            "&node=hs_a&symbol=&_s_r_a=page"
-        )
-
-        while True:
-            last_error = None
-            payload_text = None
-            url = base_url.format(page=page)
-            for _ in range(3):
-                try:
-                    req = Request(url, headers=headers)
-                    with urlopen(req, timeout=20) as resp:
-                        payload_text = resp.read().decode("utf-8")
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if payload_text is None:
-                raise last_error or RuntimeError("获取股票列表失败")
-
-            data = json.loads(payload_text)
-            if not data:
-                break
-
-            for item in data:
-                symbol = (item.get("symbol") or "").strip()
-                code = (item.get("code") or symbol[2:]).strip()
-                name = (item.get("name") or "").strip()
-                if symbol.startswith(("sh", "sz", "bj")) and len(code) == 6 and name and code not in seen:
-                    seen.add(code)
-                    stocks.append({"code": code, "name": name})
-
-            page += 1
-            if page > 200:
-                break
-        print(f"获取到 {len(stocks)} 只股票")
-        return stocks
-    except Exception as e:
-        print(f"获取股票列表失败: {e}")
-        return []
+TASK_MANAGER.register_handler(
+    "screening",
+    ScreeningTaskHandler(
+        target_resolver=resolve_screening_target,
+        run_saver=save_screening_run,
+        max_workers=SCREENING_MAX_WORKERS,
+        submit_batch=SCREENING_SUBMIT_BATCH,
+        save_interval=SCREENING_SAVE_INTERVAL,
+    ),
+)
+TASK_MANAGER.start()
 
 
-def stock_code_to_symbol(code: str) -> Optional[str]:
-    """将A股代码转换为腾讯接口所需 symbol"""
-    if code.startswith("6"):
-        return f"sh{code}"
-    if code.startswith(("0", "3")):
-        return f"sz{code}"
-    if code.startswith(("4", "8", "9")):
-        return f"bj{code}"
-    return None
-
-def get_kline_daily(symbol: str, days: int = 90) -> list:
-    """获取日K线"""
-    try:
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_dayqfq&param={symbol},day,,,{days},qfq&r=0.1"
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(url)
-            text = resp.text
-        json_start = text.find('=') + 1
-        data = json.loads(text[json_start:])
-        if data.get("code") != 0:
-            return []
-        stock_data = data.get("data", {}).get(symbol, {})
-        return stock_data.get("qfqday", [])
-    except:
-        return []
-
-def get_kline_weekly(symbol: str) -> list:
-    """获取周K线"""
-    try:
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_weekqfq&param={symbol},week,,,30,qfq&r=0.1"
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(url)
-            text = resp.text
-        json_start = text.find('=') + 1
-        data = json.loads(text[json_start:])
-        if data.get("code") != 0:
-            return []
-        stock_data = data.get("data", {}).get(symbol, {})
-        return stock_data.get("qfqweek", [])
-    except:
-        return []
-
-def check_daily_criteria(klines: list) -> dict:
-    """检查日线: MACD零轴之上 + 成交额3月新高"""
-    if not klines or len(klines) < 60:
-        return {"pass": False, "reason": "数据不足"}
-    
-    closes = [float(k[2]) for k in klines[-90:] if len(k) >= 6]
-    volumes = [float(k[5]) for k in klines[-90:] if len(k) >= 6]
-    
-    if len(closes) < 60:
-        return {"pass": False, "reason": "数据不足"}
-    
-    close_series = pd.Series(closes)
-    ema12 = close_series.ewm(span=12).mean()
-    ema26 = close_series.ewm(span=26).mean()
-    dif = ema12 - ema26
-    dea = dif.ewm(span=9).mean()
-    
-    latest_dif = dif.iloc[-1]
-    latest_dea = dea.iloc[-1]
-    macd_above_zero = latest_dif > latest_dea and latest_dif > 0
-    
-    recent_vol = volumes[-60:-1] if len(volumes) > 1 else volumes
-    max_vol_3m = max(recent_vol) if recent_vol else 0
-    current_vol = volumes[-1]
-    volume_at_high = current_vol >= max_vol_3m if max_vol_3m > 0 else False
-    
-    result = {
-        "pass": macd_above_zero and volume_at_high,
-        "current_vol": current_vol,
-        "max_vol_3m": max_vol_3m,
-        "dif": round(latest_dif, 4),
-        "dea": round(latest_dea, 4)
-    }
-    
-    if macd_above_zero and volume_at_high:
-        result["reason"] = "MACD零轴上+成交额3月新高"
-    elif not macd_above_zero:
-        result["reason"] = f"MACD未在零轴上(DIF={round(latest_dif,2)})"
-    else:
-        result["reason"] = "成交额未创新高"
-    
-    return result
-
-def check_weekly_criteria(klines: list) -> dict:
-    """检查周线: 2-3根连续红柱"""
-    if not klines or len(klines) < 3:
-        return {"pass": False, "reason": "数据不足", "count": 0}
-    
-    recent = klines[-5:]
-    red_bars = []
-    for k in recent:
-        if len(k) >= 6:
-            red_bars.append(float(k[2]) > float(k[1]))
-    
-    consecutive = 0
-    for is_red in reversed(red_bars):
-        if is_red:
-            consecutive += 1
-        else:
-            break
-    
-    result = {
-        "pass": 2 <= consecutive <= 3,
-        "count": consecutive
-    }
-    
-    if result["pass"]:
-        result["reason"] = f"周线{consecutive}根红柱"
-    elif consecutive < 2:
-        result["reason"] = f"周线红柱不足({consecutive}根)"
-    else:
-        result["reason"] = f"周线红柱过多({consecutive}根)"
-    
-    return result
-
-def screen_stock(code: str, name: str, target_info: dict) -> dict:
-    """按策略或策略组筛选单只股票（同步版本）"""
-    result = {
-        "code": code,
-        "name": name,
-        "pass": False,
-        "daily": "",
-        "weekly": "",
-        "reason": "",
-        "matched_strategies": [],
-        "current_vol": 0,
-        "max_vol_3m": 0,
-        "dif": 0,
-        "dea": 0,
-        "score": 0,
-        "payload": {},
-    }
-
-    try:
-        symbol = stock_code_to_symbol(code)
-        if not symbol:
-            result["reason"] = "不支持的股票代码"
-            return result
-
-        daily_klines = get_kline_daily(symbol, 180)
-        weekly_klines = get_kline_weekly(symbol)
-        context = build_strategy_context({"code": code, "name": name, "symbol": symbol}, daily_klines, weekly_klines)
-
-        strategy_results = []
-        for strategy in target_info.get("strategies", []):
-            strategy_result = run_strategy_code(strategy["code"], context)
-            strategy_result["strategy_id"] = strategy["id"]
-            strategy_result["strategy_name"] = strategy["name"]
-            strategy_results.append(strategy_result)
-
-        if not strategy_results:
-            result["reason"] = "没有可用策略"
-            return result
-
-        if target_info.get("target_type") == "group":
-            match_mode = target_info.get("target_logic", "AND").upper()
-            passed = all(item["pass"] for item in strategy_results) if match_mode == "AND" else any(item["pass"] for item in strategy_results)
-        else:
-            passed = strategy_results[0]["pass"]
-
-        matched_names = [item["strategy_name"] for item in strategy_results if item["pass"]]
-        failed_reasons = [f"{item['strategy_name']}: {item.get('reason', '')}" for item in strategy_results if not item["pass"]]
-        pass_reasons = [f"{item['strategy_name']}: {item.get('reason', '')}" for item in strategy_results if item["pass"]]
-
-        daily_snapshot = context["snapshots"]["daily"]
-        result["current_vol"] = daily_snapshot.get("current_volume", 0)
-        result["max_vol_3m"] = daily_snapshot.get("max_volume_3m", 0)
-        result["dif"] = round(daily_snapshot.get("latest_dif", 0), 4)
-        result["dea"] = round(daily_snapshot.get("latest_dea", 0), 4)
-        result["pass"] = passed
-        result["matched_strategies"] = matched_names
-        result["daily"] = "、".join(matched_names) if matched_names else "未命中策略"
-        result["weekly"] = " | ".join(pass_reasons if passed else failed_reasons[:3])
-        result["reason"] = result["weekly"]
-        result["score"] = max([item.get("score", 0) for item in strategy_results] + [0])
-        result["payload"] = {
-            "target": {
-                "type": target_info.get("target_type"),
-                "id": target_info.get("target_id"),
-                "name": target_info.get("target_name"),
-                "logic": target_info.get("target_logic"),
-            },
-            "strategy_results": strategy_results,
-            "snapshots": context["snapshots"],
-        }
-
-    except Exception as e:
-        result["error"] = str(e)
-        result["reason"] = str(e)
-
-    return result
-
-def run_screening_sync(target_type="strategy", target_id=None):
-    """执行完整选股筛选（同步版本，在后台线程运行）"""
-    global SCREENING_RESULT
-    SCREENING_RESULT["running"] = True
-    SCREENING_RESULT["processed"] = 0
-    target_info = resolve_screening_target(target_type, target_id)
+def enqueue_screening_task(target_type: Optional[str] = None, target_id: Optional[int] = None, source: str = "manual") -> dict:
+    requested_target_type = target_type or "strategy"
+    requested_target_id = int(target_id) if target_id is not None else None
+    target_info = resolve_screening_target(requested_target_type, requested_target_id)
     if not target_info:
-        SCREENING_RESULT["running"] = False
-        SCREENING_RESULT["error"] = "未找到可执行的策略或策略组"
-        return
+        raise ValueError("没有可执行的策略或策略组")
+    run_token = secrets.token_hex(8)
+    return TASK_MANAGER.enqueue(
+        task_type="screening",
+        payload={
+            "target_type": requested_target_type,
+            "target_id": requested_target_id,
+            "source": source,
+        },
+        queue_name="screening",
+        priority=50 if source == "scheduler" else 100,
+        run_token=run_token,
+        target_type=target_info["target_type"],
+        target_id=target_info["target_id"],
+        target_name=target_info["target_name"],
+    )
 
-    now = datetime.now()
-    run_date = now.strftime("%Y-%m-%d")
-    run_time = now.strftime("%H:%M:%S")
-    SCREENING_RESULT["time"] = f"{run_date} {run_time}"
-    SCREENING_RESULT["target_type"] = target_info["target_type"]
-    SCREENING_RESULT["target_id"] = target_info["target_id"]
-    SCREENING_RESULT["target_name"] = target_info["target_name"]
-
-    print(f"[{run_time}] 开始选股筛选（{target_info['target_name']}）...")
-    
-    stocks = get_all_stocks()
-    SCREENING_RESULT["total_stocks"] = len(stocks)
-    print(f"共 {len(stocks)} 只股票")
-    
-    results = []
-    total = len(stocks)
-    
-    if total == 0:
-        SCREENING_RESULT["running"] = False
-        return
-
-    save_counter = 0
-    batch_size = min(SCREENING_SUBMIT_BATCH, total)
-    max_workers = min(SCREENING_MAX_WORKERS, total)
-    print(f"并发配置: workers={max_workers}, submit_batch={batch_size}, save_interval={SCREENING_SAVE_INTERVAL}")
-
-    for start in range(0, total, batch_size):
-        stock_batch = stocks[start:start + batch_size]
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {
-                executor.submit(screen_stock, stock["code"], stock["name"], target_info): stock
-                for stock in stock_batch
-            }
-
-            for future in as_completed(future_map):
-                stock = future_map[future]
-                try:
-                    r = future.result()
-                except Exception as exc:
-                    r = {
-                        "code": stock["code"],
-                        "name": stock["name"],
-                        "pass": False,
-                        "reason": str(exc),
-                        "error": str(exc),
-                    }
-
-                if r.get("pass"):
-                    results.append(r)
-                    save_counter += 1
-
-                SCREENING_RESULT["processed"] += 1
-                SCREENING_RESULT["matched_count"] = len(results)
-
-                if save_counter >= SCREENING_SAVE_INTERVAL:
-                    save_screening_run(run_date, run_time, total, len(results), "running", results, target_info=target_info)
-                    save_counter = 0
-
-                processed = SCREENING_RESULT["processed"]
-                if processed % 100 == 0 or processed >= total:
-                    print(f"  进度: {processed}/{total} ({processed*100//total}%)，符合条件: {len(results)} 只")
-    
-    results.sort(key=lambda x: x.get("current_vol", 0), reverse=True)
-    
-    # 保存最终结果
-    save_screening_run(run_date, run_time, total, len(results), "completed", results, target_info=target_info)
-    
-    SCREENING_RESULT["matched_count"] = len(results)
-    SCREENING_RESULT["results"] = results[:200]
-    SCREENING_RESULT["running"] = False
-    
-    print(f"筛选完成！符合条件: {len(results)} 只")
 
 def scheduled_screening():
     """定时选股任务（每天7:00执行）"""
@@ -1315,24 +993,32 @@ def scheduled_screening():
         if now.hour >= 7:
             target += timedelta(days=1)
         seconds = (target - now).total_seconds()
-        
+
         print(f"[选股定时任务] 下次执行: {target.strftime('%Y-%m-%d %H:%M:%S')}, 等待 {int(seconds)} 秒")
         time.sleep(seconds)
-        
-        run_screening_sync()
+
+        try:
+            task = enqueue_screening_task(source="scheduler")
+            print(f"[选股定时任务] 已入队: task_id={task['id']} target={task.get('target_name')}")
+        except Exception as exc:
+            print(f"[选股定时任务] 入队失败: {exc}")
 
 
 def cleanup_old_data():
-    """清理7天前的选股数据"""
+    """清理7天前的选股与任务数据"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     if sqlite3.is_mysql_target(DB_PATH):
         c.execute("DELETE FROM screening_results WHERE STR_TO_DATE(run_date, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")
         c.execute("DELETE FROM screening_runs WHERE STR_TO_DATE(run_date, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")
+        c.execute("DELETE FROM task_logs WHERE task_id IN (SELECT id FROM task_jobs WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY))")
+        c.execute("DELETE FROM task_jobs WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)")
     else:
         c.execute("DELETE FROM screening_results WHERE run_date < date('now', '-7 days')")
         c.execute("DELETE FROM screening_runs WHERE run_date < date('now', '-7 days')")
+        c.execute("DELETE FROM task_logs WHERE task_id IN (SELECT id FROM task_jobs WHERE created_at < datetime('now', '-7 days'))")
+        c.execute("DELETE FROM task_jobs WHERE created_at < datetime('now', '-7 days')")
 
     conn.commit()
     deleted_results = getattr(c, "rowcount", 0)
@@ -1960,71 +1646,56 @@ async def screener_targets():
 
 @app.get("/api/screener/run")
 async def run_screener(target_type: str = "strategy", target_id: Optional[int] = None):
-    """手动触发选股（扫描全部A股）"""
-    if SCREENING_RESULT["running"]:
-        return {"status": "running", "message": "选股任务正在执行中..."}
-
-    resolved = resolve_screening_target(target_type, target_id)
-    if not resolved:
-        return JSONResponse({"status": "error", "message": "没有可执行的策略或策略组"}, status_code=400)
-
-    t = threading.Thread(target=run_screening_sync, kwargs={"target_type": target_type, "target_id": target_id}, daemon=True)
-    t.start()
+    """手动触发选股任务（加入队列）"""
+    try:
+        task = enqueue_screening_task(target_type=target_type, target_id=target_id, source="manual")
+    except ValueError as exc:
+        return JSONResponse({"status": "error", "message": str(exc)}, status_code=400)
     return {
-        "status": "started",
-        "message": f"选股任务已启动，目标：{resolved['target_name']}",
-        "target_type": resolved["target_type"],
-        "target_id": resolved["target_id"],
-        "target_name": resolved["target_name"],
+        "status": "queued",
+        "message": f"选股任务已加入队列，目标：{task.get('target_name') or '-'}",
+        "task_id": task["id"],
+        "run_token": task.get("run_token", ""),
+        "target_type": task.get("target_type"),
+        "target_id": task.get("target_id"),
+        "target_name": task.get("target_name"),
     }
 
 
 @app.get("/api/screener/status")
 async def screener_status(target_type: Optional[str] = None, target_id: Optional[int] = None):
     """查询选股状态"""
-    if SCREENING_RESULT["running"]:
+    task = TASK_MANAGER.get_latest_task(
+        task_type="screening",
+        target_type=target_type,
+        target_id=target_id,
+    )
+    if task:
+        result = task.get("result") or {}
+        progress_total = int(task.get("progress_total") or 0)
+        progress_current = int(task.get("progress_current") or 0)
         return {
-            "running": True,
-            "time": SCREENING_RESULT["time"],
-            "total_stocks": SCREENING_RESULT["total_stocks"],
-            "processed": SCREENING_RESULT["processed"],
-            "matched_count": SCREENING_RESULT["matched_count"],
-            "target_type": SCREENING_RESULT.get("target_type"),
-            "target_id": SCREENING_RESULT.get("target_id"),
-            "target_name": SCREENING_RESULT.get("target_name"),
-            "error": SCREENING_RESULT.get("error", ""),
-        }
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    sql = "SELECT * FROM screening_runs WHERE 1 = 1"
-    params = []
-    if target_type:
-        sql += " AND target_type = ?"
-        params.append(target_type)
-    if target_id is not None:
-        sql += " AND target_id = ?"
-        params.append(target_id)
-    sql += " ORDER BY created_at DESC LIMIT 1"
-    run_info = c.execute(sql, params).fetchone()
-    conn.close()
-    if run_info:
-        run_info = dict(run_info)
-        return {
-            "running": False,
-            "time": f"{run_info['run_date']} {run_info['run_time']}",
-            "total_stocks": run_info.get('total_stocks', 0),
-            "processed": run_info.get('total_stocks', 0),
-            "matched_count": run_info.get('matched_count', 0),
-            "target_type": run_info.get("target_type"),
-            "target_id": run_info.get("target_id"),
-            "target_name": run_info.get("target_name"),
-            "status": run_info.get("status"),
+            "running": task["status"] in ("queued", "running"),
+            "queued": task["status"] == "queued",
+            "task_id": task["id"],
+            "run_token": task.get("run_token", ""),
+            "time": task.get("started_at") or task.get("created_at") or "",
+            "total_stocks": progress_total or int(result.get("total_stocks") or 0),
+            "processed": progress_current if progress_total else int(result.get("total_stocks") or 0),
+            "matched_count": int(result.get("matched_count") or 0),
+            "target_type": task.get("target_type"),
+            "target_id": task.get("target_id"),
+            "target_name": task.get("target_name"),
+            "status": task.get("status"),
+            "progress_message": task.get("progress_message") or "",
+            "failure_summary": result.get("failure_summary", ""),
+            "error": task.get("error_text", ""),
         }
 
     return {
         "running": False,
+        "queued": False,
+        "task_id": None,
         "time": "",
         "total_stocks": 0,
         "processed": 0,
@@ -2032,7 +1703,60 @@ async def screener_status(target_type: Optional[str] = None, target_id: Optional
         "target_type": target_type,
         "target_id": target_id,
         "target_name": "",
+        "status": "",
+        "progress_message": "",
+        "failure_summary": "",
+        "error": "",
     }
+
+
+@app.get("/api/tasks")
+async def list_tasks_api(
+    task_type: Optional[str] = None,
+    status: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    limit: int = 20,
+):
+    tasks = TASK_MANAGER.list_tasks(
+        task_type=task_type,
+        status=status,
+        target_type=target_type,
+        target_id=target_id,
+        limit=max(1, min(limit, 100)),
+    )
+    items = []
+    for task in tasks:
+        result = task.get("result") or {}
+        items.append({
+            "id": task["id"],
+            "task_type": task["task_type"],
+            "queue_name": task.get("queue_name"),
+            "status": task["status"],
+            "run_token": task.get("run_token", ""),
+            "target_type": task.get("target_type"),
+            "target_id": task.get("target_id"),
+            "target_name": task.get("target_name"),
+            "progress_current": task.get("progress_current", 0),
+            "progress_total": task.get("progress_total", 0),
+            "progress_message": task.get("progress_message", ""),
+            "result_text": task.get("result_text", ""),
+            "matched_count": result.get("matched_count", 0),
+            "total_stocks": result.get("total_stocks", 0),
+            "error_text": task.get("error_text", ""),
+            "created_at": task.get("created_at", ""),
+            "started_at": task.get("started_at", ""),
+            "completed_at": task.get("completed_at", ""),
+        })
+    return {"tasks": items}
+
+
+@app.get("/api/tasks/{task_id}")
+async def get_task_api(task_id: int):
+    task = TASK_MANAGER.get_task(task_id)
+    if not task:
+        return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
+    return {"ok": True, "task": task}
 
 
 @app.get("/api/screener/results")
@@ -2054,16 +1778,25 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
 
     if not latest:
         conn.close()
-        return {"results": [], "time": "", "total": 0, "matched_count": 0}
+        return {"results": [], "time": "", "total": 0, "matched_count": 0, "failure_summary": ""}
 
     run_date = latest['run_date']
     run_time = latest['run_time']
-    rows = c.execute(
-        '''SELECT * FROM screening_results
-           WHERE run_date = ? AND run_time = ?
-           ORDER BY score DESC, current_volume DESC''',
-        (run_date, run_time),
-    ).fetchall()
+    run_token = latest.get("run_token", "")
+    if run_token:
+        rows = c.execute(
+            '''SELECT * FROM screening_results
+               WHERE run_token = ?
+               ORDER BY score DESC, current_volume DESC''',
+            (run_token,),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            '''SELECT * FROM screening_results
+               WHERE run_date = ? AND run_time = ?
+               ORDER BY score DESC, current_volume DESC''',
+            (run_date, run_time),
+        ).fetchall()
 
     results = []
     for r in rows:
@@ -2091,11 +1824,13 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
 
     return {
         "time": f"{run_date} {run_time}",
+        "run_token": run_token,
         "total": len(results),
         "matched_count": len(results),
         "target_type": latest["target_type"],
         "target_id": latest["target_id"],
         "target_name": latest["target_name"],
+        "failure_summary": latest.get("failure_summary", ""),
         "results": results,
     }
 
@@ -2120,6 +1855,7 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
     history = []
     for r in rows:
         history.append({
+            "run_token": r.get("run_token", ""),
             "run_date": r['run_date'],
             "run_time": r['run_time'],
             "target_type": r['target_type'],
@@ -2129,6 +1865,7 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
             "total_stocks": r['total_stocks'],
             "matched_count": r['matched_count'],
             "status": r['status'],
+            "failure_summary": r.get("failure_summary", ""),
         })
 
     conn.close()
@@ -2136,13 +1873,19 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
 
 
 @app.get("/api/screener/history/{run_date}/{run_time}")
-async def get_history_detail(run_date: str, run_time: str, target_type: Optional[str] = None, target_id: Optional[int] = None):
+async def get_history_detail(run_date: str, run_time: str, target_type: Optional[str] = None, target_id: Optional[int] = None, run_token: Optional[str] = None):
     """获取某次选股的具体结果"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    sql = "SELECT * FROM screening_results WHERE run_date = ? AND run_time = ?"
-    params = [run_date, run_time]
+    sql = "SELECT * FROM screening_results WHERE 1 = 1"
+    params = []
+    if run_token:
+        sql += " AND run_token = ?"
+        params.append(run_token)
+    else:
+        sql += " AND run_date = ? AND run_time = ?"
+        params.extend([run_date, run_time])
     if target_type:
         sql += " AND target_type = ?"
         params.append(target_type)

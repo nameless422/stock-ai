@@ -449,7 +449,7 @@
             <div class="sub">把运行控制、结果浏览和历史追踪拆成适合单手操作的手机卡片。重点信息前置，翻页和详情保留，但不再沿用桌面栏位结构。</div>
             <div class="hero-actions">
                 <a class="btn secondary" href="/strategies">管理策略</a>
-                <button class="btn primary" id="runBtn" onclick="runScreener()">开始筛选</button>
+                <button class="btn primary" id="runBtn" onclick="runScreener()">加入队列</button>
             </div>
         </div>
 
@@ -478,6 +478,19 @@
                     <div class="stat-label">扫描进度</div>
                     <div class="stat-value" id="progressValue">0 / 0</div>
                 </div>
+            </div>
+        </div>
+
+        <div class="surface section">
+            <div class="section-head">
+                <div>
+                    <h2>任务队列</h2>
+                    <div class="small" style="margin-top:4px;">最近的策略扫描任务与执行进度</div>
+                </div>
+                <div class="section-meta">队列视图</div>
+            </div>
+            <div id="taskList" class="list">
+                <div class="empty">加载中...</div>
             </div>
         </div>
 
@@ -596,6 +609,7 @@
             lastStatusKey: '',
             lastResultKey: '',
             lastHistoryKey: '',
+            lastTaskKey: '',
             lastMatchedCount: -1,
             lastRunning: false,
             currentDetailKey: '',
@@ -664,7 +678,11 @@
         }
 
         function historySignature(items) {
-            return (items || []).map(item => `${item.run_date}:${item.run_time}:${item.target_type}:${item.target_id}:${item.matched_count}`).join('||');
+            return (items || []).map(item => `${item.run_token || ''}:${item.run_date}:${item.run_time}:${item.target_type}:${item.target_id}:${item.matched_count}`).join('||');
+        }
+
+        function taskSignature(items) {
+            return (items || []).map(item => `${item.id}:${item.status}:${item.progress_current}:${item.progress_total}:${item.result_text}:${item.error_text}`).join('||');
         }
 
         function updatePager(baseId, pageState, pageSize) {
@@ -816,11 +834,12 @@
             const startIndex = (historyState.page - 1) * HISTORY_PAGE_SIZE;
             const pageItems = items.slice(startIndex, startIndex + HISTORY_PAGE_SIZE);
             el.innerHTML = pageItems.map(item => `
-                <div class="item history-item" onclick="loadDetail('${item.run_date}', '${item.run_time}', '${item.target_type || ''}', '${item.target_id || ''}')">
+                <div class="item history-item" onclick="loadDetail('${item.run_date}', '${item.run_time}', '${item.target_type || ''}', '${item.target_id || ''}', '${item.run_token || ''}')">
                     <div class="item-top">
                         <div>
                             <div class="name">${item.target_name || '未命名目标'}</div>
                             <div class="small">${item.run_date} ${item.run_time}</div>
+                            <div class="small">${item.failure_summary || ''}</div>
                         </div>
                         <div class="score-badge">命中 ${item.matched_count || 0}</div>
                     </div>
@@ -838,6 +857,37 @@
             historyState.items = items || [];
             updatePager('history', historyState, HISTORY_PAGE_SIZE);
             renderHistoryPage();
+        }
+
+        function renderTasks(items) {
+            const el = document.getElementById('taskList');
+            if (!items || !items.length) {
+                el.innerHTML = '<div class="empty">暂无任务</div>';
+                return;
+            }
+            el.innerHTML = items.map(item => {
+                const summary = item.progress_message || item.result_text || item.error_text || '-';
+                const progress = item.progress_total ? `${item.progress_current || 0} / ${item.progress_total}` : '-';
+                const matched = item.matched_count || 0;
+                const timeText = item.completed_at || item.started_at || item.created_at || '-';
+                return `
+                    <div class="item">
+                        <div class="item-top">
+                            <div>
+                                <div class="name">${item.target_name || '未命名目标'}</div>
+                                <div class="small">任务 #${item.id} · ${item.status || '-'} · ${timeText}</div>
+                            </div>
+                            <div class="score-badge">命中 ${matched}</div>
+                        </div>
+                        <div class="chip-row">
+                            <span class="pill">${item.task_type || 'screening'}</span>
+                            <span class="pill">进度 ${progress}</span>
+                            <span class="pill">${item.target_type === 'group' ? '策略组' : '策略'}</span>
+                        </div>
+                        <div class="reason">${summary}</div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function renderDetailPage() {
@@ -911,17 +961,20 @@
             document.getElementById('currentTarget').textContent = data.target_name || currentTargetName();
             document.getElementById('matchedCount').textContent = data.matched_count || 0;
             document.getElementById('progressValue').textContent = `${data.processed || 0} / ${data.total_stocks || 0}`;
-            document.getElementById('statusText').innerHTML = data.running
-                ? '<span class="status-live">正在扫描全市场...</span>'
-                : (data.status === 'completed' ? '最近一次运行已完成' : '当前没有运行中的任务');
+            document.getElementById('statusText').innerHTML = data.queued
+                ? `任务排队中${data.progress_message ? ' · ' + data.progress_message : ''}`
+                : data.running
+                    ? `<span class="status-live">正在扫描全市场...</span>${data.progress_message ? ' · ' + data.progress_message : ''}`
+                    : (data.status === 'completed' ? `最近一次运行已完成${data.progress_message ? ' · ' + data.progress_message : ''}` : (data.status === 'failed' ? `最近任务失败 · ${data.error || data.progress_message || '-'}` : '当前没有运行中的任务'));
             document.getElementById('lastRunText').textContent = data.time ? `最近运行：${data.time}` : '';
-            document.getElementById('runBtn').disabled = !!data.running;
+            document.getElementById('runBtn').disabled = false;
             if (data.running && (!state.lastRunning || data.matched_count !== state.lastMatchedCount)) {
                 loadResults(true);
             }
             if (!data.running && state.lastRunning) {
                 loadResults(true);
                 loadHistory(true);
+                loadTasks(true);
             }
             state.lastMatchedCount = data.matched_count || 0;
             state.lastRunning = !!data.running;
@@ -934,7 +987,8 @@
             const signature = `${data.time || ''}#${resultSignature(data.results)}`;
             if (!force && signature === state.lastResultKey) return;
             state.lastResultKey = signature;
-            document.getElementById('resultMeta').textContent = data.time ? `${data.target_name || '-'} · ${data.time} · ${data.total} 只` : '';
+            const summary = data.failure_summary ? ` · 未命中原因: ${data.failure_summary}` : '';
+            document.getElementById('resultMeta').textContent = data.time ? `${data.target_name || '-'} · ${data.time} · ${data.total} 只${summary}` : '';
             renderResults(data.results || [], !force);
         }
 
@@ -947,11 +1001,21 @@
             renderHistory(data.history || [], !force);
         }
 
-        async function loadDetail(runDate, runTime, targetType, targetId) {
+        async function loadTasks(force = false) {
+            const res = await fetch('/api/tasks?task_type=screening&limit=12&' + qs());
+            const data = await res.json();
+            const signature = taskSignature(data.tasks || []);
+            if (!force && signature === state.lastTaskKey) return;
+            state.lastTaskKey = signature;
+            renderTasks(data.tasks || []);
+        }
+
+        async function loadDetail(runDate, runTime, targetType, targetId, runToken = '') {
             const params = new URLSearchParams();
             if (targetType) params.set('target_type', targetType);
             if (targetId) params.set('target_id', targetId);
-            detailRequestKey = `${runDate}|${runTime}|${targetType}|${targetId}`;
+            if (runToken) params.set('run_token', runToken);
+            detailRequestKey = `${runToken}|${runDate}|${runTime}|${targetType}|${targetId}`;
             state.currentDetailKey = detailRequestKey;
             const res = await fetch(`/api/screener/history/${runDate}/${encodeURIComponent(runTime)}?` + params.toString());
             const data = await res.json();
@@ -970,11 +1034,13 @@
                 return;
             }
             startPolling();
+            await loadTasks(true);
             await loadStatus();
         }
 
         async function refreshAll() {
             await loadStatus();
+            await loadTasks(true);
             await loadResults(true);
             await loadHistory(true);
         }
@@ -993,8 +1059,10 @@
             }, 1000);
             slowPollTimer = setInterval(async () => {
                 if (state.lastRunning) {
+                    await loadTasks();
                     await loadResults();
                 } else {
+                    await loadTasks();
                     await loadResults();
                     await loadHistory();
                 }
