@@ -112,6 +112,116 @@ button {
     flex-wrap: wrap;
 }
 
+/* ---------- Workflow Switcher ---------- */
+.workflow-switcher {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+}
+.workflow-switcher::before {
+    content: "";
+    position: absolute;
+    top: 19px;
+    left: 24px;
+    right: 24px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(91, 141, 239, 0.06), rgba(91, 141, 239, 0.24), rgba(247, 185, 85, 0.18), rgba(91, 141, 239, 0.06));
+    pointer-events: none;
+}
+.workflow-card {
+    position: relative;
+    min-height: 180px;
+    padding: var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background:
+        radial-gradient(circle at top right, rgba(91, 141, 239, 0.08), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0)),
+        var(--bg-elev);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.workflow-card::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(91, 141, 239, 0.3);
+    box-shadow: 0 0 0 6px rgba(91, 141, 239, 0.08);
+}
+.workflow-card:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+}
+.workflow-card.is-active {
+    border-color: rgba(91, 141, 239, 0.44);
+    background:
+        radial-gradient(circle at top right, rgba(91, 141, 239, 0.16), transparent 38%),
+        linear-gradient(180deg, rgba(91, 141, 239, 0.12), rgba(91, 141, 239, 0.02)),
+        var(--bg-elev);
+    box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.12), 0 16px 36px rgba(0, 0, 0, 0.32);
+}
+.workflow-card.is-active::before {
+    background: var(--primary);
+    box-shadow: 0 0 0 6px rgba(91, 141, 239, 0.16);
+}
+.workflow-step {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 10px;
+    margin-left: 18px;
+    border-radius: var(--r-pill);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-3);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.workflow-card.is-active .workflow-step {
+    background: rgba(91, 141, 239, 0.14);
+    color: var(--primary);
+}
+.workflow-title {
+    margin-top: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-1);
+    letter-spacing: -0.01em;
+}
+.workflow-desc {
+    margin-top: 6px;
+    min-height: 58px;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--text-2);
+}
+.workflow-meta {
+    margin-top: var(--sp-2);
+    min-height: 20px;
+    font-size: 12px;
+    color: var(--text-3);
+}
+.workflow-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+}
+.workflow-card .btn {
+    backdrop-filter: blur(8px);
+}
+
 /* ---------- 标题 ---------- */
 .title-xl {
     font-size: 24px;
@@ -757,6 +867,25 @@ textarea.input {
 }
 .toast-success { border-color: rgba(41, 180, 140, 0.4); }
 .toast-error { border-color: rgba(239, 77, 107, 0.4); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 960px) {
+    .page {
+        padding: var(--sp-4) var(--sp-3);
+    }
+    .workflow-switcher {
+        grid-template-columns: 1fr;
+    }
+    .workflow-switcher::before {
+        display: none;
+    }
+    .workflow-card {
+        min-height: 0;
+    }
+    .workflow-desc {
+        min-height: 0;
+    }
+}
 
 /* ---------- 动画 keyframes ---------- */
 @keyframes spin {

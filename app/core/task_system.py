@@ -75,6 +75,7 @@ class TaskStore:
         target_type: Optional[str] = None,
         target_id: Optional[int] = None,
         limit: int = 30,
+        sort_mode: str = "recent",
     ) -> list[dict]:
         conn = db.connect(self.db_path)
         conn.row_factory = db.Row
@@ -93,7 +94,21 @@ class TaskStore:
         if target_id is not None:
             sql += " AND target_id = ?"
             params.append(target_id)
-        sql += " ORDER BY id DESC LIMIT ?"
+        if sort_mode == "queue":
+            sql += """
+                ORDER BY
+                    CASE
+                        WHEN status = 'running' THEN 0
+                        WHEN status = 'queued' THEN 1
+                        ELSE 2
+                    END ASC,
+                    CASE WHEN status IN ('running', 'queued') THEN priority ELSE NULL END ASC,
+                    CASE WHEN status IN ('running', 'queued') THEN id ELSE NULL END ASC,
+                    id DESC
+            """
+        else:
+            sql += " ORDER BY id DESC"
+        sql += " LIMIT ?"
         params.append(limit)
         rows = c.execute(sql, params).fetchall()
         conn.close()
@@ -273,6 +288,88 @@ class TaskStore:
         conn.commit()
         conn.close()
 
+    def delete_task(self, task_id: int) -> tuple[bool, str]:
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
+        c = conn.cursor()
+        row = c.execute("SELECT * FROM task_jobs WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            conn.close()
+            return False, "任务不存在"
+
+        task = dict(row)
+        if task.get("status") == "running":
+            conn.close()
+            return False, "运行中的任务不允许删除"
+
+        c.execute("DELETE FROM task_jobs WHERE id = ? AND status != 'running'", (task_id,))
+        changed = getattr(c, "rowcount", 0)
+        conn.commit()
+        conn.close()
+        if changed == 0:
+            return False, "任务状态已变化，请刷新后重试"
+        return True, "任务已删除"
+
+    def reorder_task(self, task_id: int, action: str) -> tuple[bool, str]:
+        if action not in {"up", "down", "top"}:
+            return False, "不支持的任务排序动作"
+
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
+        c = conn.cursor()
+        row = c.execute("SELECT * FROM task_jobs WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            conn.close()
+            return False, "任务不存在"
+
+        task = dict(row)
+        if task.get("status") != "queued":
+            conn.close()
+            return False, "只有排队中的任务才能调整顺序"
+
+        rows = c.execute(
+            """
+            SELECT * FROM task_jobs
+            WHERE status = 'queued' AND task_type = ? AND queue_name = ?
+            ORDER BY priority ASC, id ASC
+            """,
+            (task.get("task_type"), task.get("queue_name")),
+        ).fetchall()
+        queued_tasks = [dict(item) for item in rows]
+        index = next((idx for idx, item in enumerate(queued_tasks) if int(item["id"]) == int(task_id)), -1)
+        if index < 0:
+            conn.close()
+            return False, "任务不在排队列表中"
+
+        if action == "up":
+            if index == 0:
+                conn.close()
+                return False, "任务已经在最前面"
+            queued_tasks[index - 1], queued_tasks[index] = queued_tasks[index], queued_tasks[index - 1]
+            message = "任务顺序已上移"
+        elif action == "down":
+            if index >= len(queued_tasks) - 1:
+                conn.close()
+                return False, "任务已经在最后面"
+            queued_tasks[index], queued_tasks[index + 1] = queued_tasks[index + 1], queued_tasks[index]
+            message = "任务顺序已下移"
+        else:
+            if index == 0:
+                conn.close()
+                return False, "任务已经在队列最前"
+            queued_tasks.insert(0, queued_tasks.pop(index))
+            message = "任务已插队到最前面"
+
+        for idx, item in enumerate(queued_tasks, start=1):
+            c.execute(
+                "UPDATE task_jobs SET priority = ?, updated_at = ? WHERE id = ?",
+                (idx * 10, _now_text(), item["id"]),
+            )
+        conn.commit()
+        conn.close()
+        self.append_log(task_id, "info", message)
+        return True, message
+
     def _decode_row(self, row: dict) -> dict:
         payload_text = row.get("payload_text") or "{}"
         result_payload = row.get("result_payload") or ""
@@ -400,6 +497,15 @@ class TaskManager:
 
     def get_latest_task(self, **kwargs) -> Optional[dict]:
         return self.store.get_latest_task(**kwargs)
+
+    def delete_task(self, task_id: int) -> tuple[bool, str]:
+        return self.store.delete_task(task_id)
+
+    def reorder_task(self, task_id: int, action: str) -> tuple[bool, str]:
+        changed, message = self.store.reorder_task(task_id, action)
+        if changed:
+            self._wake_event.set()
+        return changed, message
 
     def _worker_loop(self) -> None:
         while not self._stop_event.is_set():

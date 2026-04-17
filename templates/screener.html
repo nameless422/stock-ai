@@ -40,11 +40,87 @@
             gap: var(--sp-3);
             align-items: center;
         }
+        .toolbar-card {
+            position: relative;
+            transition: border-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease), transform var(--t-med) var(--ease);
+        }
+        .toolbar-card.is-guided {
+            border-color: rgba(91, 141, 239, 0.42);
+            box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.16), 0 14px 32px rgba(91, 141, 239, 0.12);
+        }
+        .toolbar-card.is-guided::after {
+            content: "";
+            position: absolute;
+            inset: -8px;
+            border-radius: calc(var(--r-lg) + 8px);
+            border: 1px solid rgba(91, 141, 239, 0.16);
+            pointer-events: none;
+        }
+        .guide-banner {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-3);
+            padding: var(--sp-3) var(--sp-4);
+            border-radius: var(--r-md);
+            border: 1px solid rgba(91, 141, 239, 0.2);
+            background:
+                linear-gradient(135deg, rgba(91, 141, 239, 0.12), rgba(91, 141, 239, 0.04)),
+                var(--bg-elev);
+        }
+        .guide-banner-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .guide-banner-desc {
+            margin-top: 4px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-2);
+        }
+        .guide-banner-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: var(--sp-2);
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(91, 141, 239, 0.12);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .guide-dismiss {
+            flex: none;
+            border: 0;
+            background: transparent;
+            color: var(--text-3);
+            cursor: pointer;
+            padding: 2px;
+            font-size: 18px;
+            line-height: 1;
+        }
+        .guide-dismiss:hover { color: var(--text-1); }
+        .guided-run-btn {
+            position: relative;
+            box-shadow: 0 0 0 0 rgba(91, 141, 239, 0.28);
+            animation: guided-pulse 1.8s ease-out infinite;
+        }
+        @keyframes guided-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(91, 141, 239, 0.28); }
+            70% { box-shadow: 0 0 0 10px rgba(91, 141, 239, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(91, 141, 239, 0); }
+        }
         @media (max-width: 720px) {
             .toolbar {
                 grid-template-columns: 1fr 1fr;
             }
             .toolbar > .btn { grid-column: span 1; }
+            .guide-banner {
+                flex-direction: column;
+            }
         }
 
         /* 状态卡 */
@@ -96,6 +172,182 @@
             gap: var(--sp-3);
         }
         .status-progress-row .progress { flex: 1; }
+        .task-board {
+            display: grid;
+            grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+            gap: var(--sp-4);
+            margin-bottom: var(--sp-4);
+        }
+        @media (max-width: 960px) {
+            .task-board { grid-template-columns: 1fr; }
+        }
+        .task-latest-card,
+        .task-queue-card {
+            overflow: hidden;
+        }
+        .task-board-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-3);
+        }
+        .task-scope-tabs {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px;
+            border-radius: 999px;
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+        }
+        .task-scope-tab {
+            border: 0;
+            background: transparent;
+            color: var(--text-2);
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+        }
+        .task-scope-tab.is-active {
+            background: rgba(91, 141, 239, 0.12);
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .task-filter-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-3);
+            flex-wrap: wrap;
+        }
+        .task-filter-tabs {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px;
+            border-radius: 999px;
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .task-filter-tab {
+            border: 0;
+            background: transparent;
+            color: var(--text-2);
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+        }
+        .task-filter-tab.is-active {
+            background: rgba(91, 141, 239, 0.12);
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .task-latest-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: var(--bg-elev);
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .task-latest-status.is-running {
+            color: var(--primary);
+            background: rgba(91, 141, 239, 0.12);
+        }
+        .task-latest-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--sp-3);
+        }
+        .task-mini-tile {
+            padding: var(--sp-3);
+            border-radius: var(--r-md);
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+        }
+        .task-mini-label {
+            color: var(--text-3);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .task-mini-value {
+            margin-top: 4px;
+            color: var(--text-1);
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .task-mini-sub {
+            margin-top: 6px;
+            color: var(--text-2);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .task-queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-3);
+        }
+        .task-item {
+            padding: var(--sp-3) var(--sp-4);
+            border-radius: var(--r-md);
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+        }
+        .task-item.is-running {
+            border-color: rgba(91, 141, 239, 0.3);
+            background: linear-gradient(180deg, rgba(91, 141, 239, 0.06), var(--bg-elev));
+        }
+        .task-item.is-queued {
+            border-color: rgba(237, 170, 49, 0.22);
+        }
+        .task-item-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-3);
+        }
+        .task-item-name {
+            color: var(--text-1);
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .task-item-meta,
+        .task-item-desc {
+            margin-top: 6px;
+            color: var(--text-2);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .task-item-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: var(--sp-3);
+        }
+        .task-action-btn { min-width: 66px; }
+        .task-progress { margin-top: var(--sp-3); }
+        .task-progress-text {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--text-3);
+        }
+        .task-empty {
+            padding: var(--sp-4);
+            border-radius: var(--r-md);
+            border: 1px dashed var(--border);
+            color: var(--text-3);
+            text-align: center;
+        }
 
         /* 主栅格 */
         .grid-main {
@@ -315,8 +567,52 @@
             </div>
         </header>
 
+        <section class="workflow-switcher" aria-label="跨页切换">
+            <div class="workflow-card">
+                <div class="workflow-step">Step 1</div>
+                <div class="workflow-title">策略管理</div>
+                <div class="workflow-desc">需要调策略时随时返回，不用先退出当前筛选任务。</div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" href="/strategies">去管理策略</a>
+                </div>
+            </div>
+            <div class="workflow-card is-active">
+                <div class="workflow-step">Step 2</div>
+                <div class="workflow-title">筛选股票</div>
+                <div class="workflow-desc">当前页负责跑扫描、看命中结果，再点进单票详情核查。</div>
+                <div class="workflow-meta" x-text="workflowTargetMeta()"></div>
+                <div class="workflow-actions">
+                    <a class="btn btn-primary btn-sm" :href="screenerDeepLink()">继续当前筛选</a>
+                </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-step">Step 3</div>
+                <div class="workflow-title">股票详情</div>
+                <div class="workflow-desc">保留最近查看的股票，筛选过程中也能快速来回切换。</div>
+                <div class="workflow-meta" x-text="workspace.stock ? `最近股票：${workspace.stock.name || workspace.stock.code} · ${workspace.stock.code}` : '最近股票：暂无记录'"></div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" :href="lastStockUrl()">去最近股票</a>
+                </div>
+            </div>
+        </section>
+
         <!-- ========== 工具栏 ========== -->
-        <div class="card card-compact stack" style="margin-bottom: var(--sp-4);">
+        <div class="card card-compact stack toolbar-card"
+             :class="{ 'is-guided': guide.active }"
+             x-ref="toolbarCard"
+             style="margin-bottom: var(--sp-4);">
+            <div class="guide-banner" x-show="guide.active">
+                <div>
+                    <div class="guide-banner-title">下一步已经帮你定位好了</div>
+                    <div class="guide-banner-desc">
+                        已为你选中
+                        <strong x-text="guide.targetName || currentTargetName() || '当前目标'"></strong>
+                        ，直接点右侧的“开始扫描”就会跑全市场。
+                    </div>
+                    <div class="guide-banner-step">第 1 步 · 确认目标  第 2 步 · 点击开始扫描</div>
+                </div>
+                <button type="button" class="guide-dismiss" @click="dismissGuide()" aria-label="关闭引导">×</button>
+            </div>
             <div class="toolbar">
                 <select class="select" x-model="targetType" @change="onTargetTypeChange()">
                     <option value="strategy">按策略执行</option>
@@ -330,7 +626,9 @@
                         <option :value="item.id" x-text="item.name"></option>
                     </template>
                 </select>
-                <button class="btn btn-primary" @click="runScreener()"
+                <button class="btn btn-primary"
+                        :class="{ 'guided-run-btn': guide.active }"
+                        @click="runScreener()"
                         :disabled="!canRun">
                     <template x-if="isStarting || (status && status.running)">
                         <span class="spinner spinner-on-primary"></span>
@@ -397,6 +695,163 @@
             <div class="failure-summary" x-show="status && status.failure_summary">
                 <span class="failure-summary-label">未命中摘要</span>
                 <span x-text="status && status.failure_summary"></span>
+            </div>
+        </section>
+
+        <section class="task-board">
+            <div class="card task-latest-card">
+                <div class="task-board-title">
+                    <div>
+                        <div class="title-lg">最近任务状态</div>
+                        <div class="text-3 text-small" x-text="taskScope === 'current' ? '这里只看当前目标的最新任务' : '这里看全部扫描任务里最新的一条'"></div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+                        <div class="task-scope-tabs">
+                            <button type="button" class="task-scope-tab"
+                                    :class="{ 'is-active': taskScope === 'current' }"
+                                    @click="setTaskScope('current')">
+                                当前目标
+                            </button>
+                            <button type="button" class="task-scope-tab"
+                                    :class="{ 'is-active': taskScope === 'all' }"
+                                    @click="setTaskScope('all')">
+                                全部任务
+                            </button>
+                        </div>
+                        <span class="task-latest-status"
+                              :class="{ 'is-running': latestTask && (latestTask.status === 'running' || latestTask.status === 'queued') }"
+                              x-text="taskStatusText(latestTask)"></span>
+                    </div>
+                </div>
+
+                <template x-if="!latestTask">
+                    <div class="task-empty" x-text="taskScope === 'current' ? '当前目标还没有扫描任务' : '最近还没有扫描任务'"></div>
+                </template>
+
+                <div class="task-latest-grid" x-show="latestTask">
+                    <div class="task-mini-tile">
+                        <div class="task-mini-label">目标</div>
+                        <div class="task-mini-value" x-text="latestTask && (latestTask.target_name || '未命名目标')"></div>
+                        <div class="task-mini-sub" x-text="latestTask ? `#${latestTask.id} · ${latestTask.target_type === 'group' ? '策略组' : '策略'}` : ''"></div>
+                    </div>
+                    <div class="task-mini-tile">
+                        <div class="task-mini-label">进度</div>
+                        <div class="task-mini-value" x-text="latestTask ? `${latestTask.progress_current || 0} / ${latestTask.progress_total || 0}` : '0 / 0'"></div>
+                        <div class="task-mini-sub" x-text="latestTask ? `${taskProgressPercent(latestTask)}%` : ''"></div>
+                    </div>
+                    <div class="task-mini-tile">
+                        <div class="task-mini-label">结果</div>
+                        <div class="task-mini-value" x-text="latestTask ? `${latestTask.matched_count || 0} 只命中` : '0 只命中'"></div>
+                        <div class="task-mini-sub" x-text="latestTask ? (latestTask.completed_at || latestTask.started_at || latestTask.created_at || '') : ''"></div>
+                    </div>
+                    <div class="task-mini-tile">
+                        <div class="task-mini-label">说明</div>
+                        <div class="task-mini-sub" x-text="taskSummaryText(latestTask)"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card task-queue-card">
+                <div class="task-board-title">
+                    <div>
+                        <div class="title-lg">任务队列</div>
+                        <div class="text-3 text-small"
+                             x-text="taskScope === 'current' ? '当前目标下的任务；支持删除、调整顺序和插队' : '全部扫描任务；支持删除、调整顺序和插队'"></div>
+                    </div>
+                    <div class="text-3 text-small" x-text="tasks ? `共 ${tasks.length} 条` : '加载中…'"></div>
+                </div>
+
+                <div class="task-filter-row" x-show="taskScope === 'all'">
+                    <div class="task-filter-tabs">
+                        <button type="button" class="task-filter-tab"
+                                :class="{ 'is-active': taskStatusFilter === 'all' }"
+                                @click="taskStatusFilter = 'all'">
+                            全部
+                        </button>
+                        <button type="button" class="task-filter-tab"
+                                :class="{ 'is-active': taskStatusFilter === 'queued' }"
+                                @click="taskStatusFilter = 'queued'">
+                            排队中
+                        </button>
+                        <button type="button" class="task-filter-tab"
+                                :class="{ 'is-active': taskStatusFilter === 'running' }"
+                                @click="taskStatusFilter = 'running'">
+                            运行中
+                        </button>
+                        <button type="button" class="task-filter-tab"
+                                :class="{ 'is-active': taskStatusFilter === 'completed' }"
+                                @click="taskStatusFilter = 'completed'">
+                            已完成
+                        </button>
+                        <button type="button" class="task-filter-tab"
+                                :class="{ 'is-active': taskStatusFilter === 'failed' }"
+                                @click="taskStatusFilter = 'failed'">
+                            失败
+                        </button>
+                    </div>
+                    <div class="text-3 text-small" x-text="`筛选后 ${displayTasks.length} 条`"></div>
+                </div>
+
+                <template x-if="tasks === null">
+                    <div>
+                        <div class="skeleton skeleton-row"></div>
+                        <div class="skeleton skeleton-row"></div>
+                    </div>
+                </template>
+
+                <template x-if="tasks !== null && displayTasks.length === 0">
+                    <div class="task-empty" x-text="taskScope === 'current' ? '当前目标没有扫描任务' : '当前没有扫描任务'"></div>
+                </template>
+
+                <div class="task-queue-list" x-show="displayTasks && displayTasks.length > 0">
+                    <template x-for="(task, index) in displayTasks" :key="task.id">
+                        <div class="task-item"
+                             :class="{ 'is-running': task.status === 'running', 'is-queued': task.status === 'queued' }">
+                            <div class="task-item-head">
+                                <div>
+                                    <div class="task-item-name" x-text="task.target_name || '未命名目标'"></div>
+                                    <div class="task-item-meta"
+                                         x-text="`#${task.id} · ${task.target_type === 'group' ? '策略组' : '策略'} · ${taskStatusText(task)}`"></div>
+                                </div>
+                                <span class="badge badge-dim"
+                                      x-text="task.status === 'queued' ? `队列第 ${queuedTaskIndex(task.id)}` : (task.status === 'running' ? '执行中' : '已结束')"></span>
+                            </div>
+
+                            <div class="task-item-desc" x-text="taskSummaryText(task)"></div>
+
+                            <div class="task-progress" x-show="task.status === 'running' || task.status === 'completed'">
+                                <div class="progress">
+                                    <div class="progress-bar" :style="`width: ${taskProgressPercent(task)}%`"></div>
+                                </div>
+                                <div class="task-progress-text"
+                                     x-text="`${task.progress_current || 0} / ${task.progress_total || 0} · ${taskProgressPercent(task)}%`"></div>
+                            </div>
+
+                            <div class="task-item-actions">
+                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                        @click="actOnTask(task.id, 'top')"
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)">
+                                    插队
+                                </button>
+                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                        @click="actOnTask(task.id, 'up')"
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)">
+                                    上移
+                                </button>
+                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                        @click="actOnTask(task.id, 'down')"
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === queuedTasks.length || isTaskBusy(task.id)">
+                                    下移
+                                </button>
+                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                        @click="actOnTask(task.id, 'delete')"
+                                        :disabled="task.status === 'running' || isTaskBusy(task.id)">
+                                    删除
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
         </section>
 
@@ -582,7 +1037,10 @@
                                 <span class="badge badge-dim" x-text="`${detail.results ? detail.results.length : 0} 只命中`"></span>
                             </div>
                         </div>
-                        <button class="btn btn-ghost btn-icon" @click="closeDetail()" aria-label="关闭">✕</button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn btn-ghost btn-sm" @click="downloadMissLog(detail)">下载未命中日志</button>
+                            <button class="btn btn-ghost btn-icon" @click="closeDetail()" aria-label="关闭">✕</button>
+                        </div>
                     </header>
                     <div class="drawer-body">
                         <template x-if="detail.results === null">
@@ -653,22 +1111,40 @@
                 targets: { strategies: [], groups: [] },
                 targetType: 'strategy',
                 targetId: null,
+                storageKeys: {
+                    stock: 'stock_ai_last_stock',
+                    screener: 'stock_ai_last_screener',
+                },
+                workspace: {
+                    stock: null,
+                    screener: null,
+                },
+                guide: {
+                    active: false,
+                    targetName: '',
+                    hasScrolled: false,
+                },
                 isDesktop: window.matchMedia('(min-width: 960px)').matches,
                 view: 'results',          // 仅移动端用：'results' | 'history'
                 isStarting: false,
+                taskScope: 'current',
+                taskStatusFilter: 'all',
 
                 // ========== 数据状态（null 表示未加载，[] 表示空结果） ==========
                 status: null,
+                latestTask: null,
+                tasks: null,
                 results: null,
                 resultsPage: 1,
                 history: null,
                 historyPage: 1,
                 detail: null,             // { run_date, run_time, target_type, target_id, target_name, run_token, results, total }
                 detailPage: 1,
+                taskActionId: null,
 
                 // ========== 内部运行时 ==========
                 gen: 0,                   // 目标变更时自增，用于丢弃旧响应
-                timers: { status: null, results: null },
+                timers: { status: null, results: null, tasks: null },
                 controllers: {},          // 每个 channel 的 AbortController
 
                 // ========== 计算属性 ==========
@@ -695,6 +1171,14 @@
                     const start = (this.detailPage - 1) * this.PAGE_SIZE;
                     return this.detail.results.slice(start, start + this.PAGE_SIZE);
                 },
+                get queuedTasks() {
+                    return (this.tasks || []).filter(item => item.status === 'queued');
+                },
+                get displayTasks() {
+                    const items = this.tasks || [];
+                    if (this.taskScope !== 'all' || this.taskStatusFilter === 'all') return items;
+                    return items.filter(item => item.status === this.taskStatusFilter);
+                },
 
                 // ========== 初始化 ==========
                 async init() {
@@ -708,15 +1192,26 @@
                         const qs = new URLSearchParams(window.location.search);
                         const qType = qs.get('target_type');
                         const qId = qs.get('target_id');
+                        const guided = qs.get('guided');
+                        const targetName = qs.get('target_name');
                         if (qType === 'strategy' || qType === 'group') this.targetType = qType;
                         if (qId) this.targetId = Number(qId);
+                        if (guided === '1') {
+                            this.guide.active = true;
+                            this.guide.targetName = targetName || '';
+                        }
                     } catch (_) {}
 
                     // 先加载目标、首轮数据，再开启 watch（避免 syncTargetSelection 触发双重刷新）
                     await this.loadTargets();
+                    this.workspace.stock = this.readStoredJson(this.storageKeys.stock);
+                    this.workspace.screener = this.readStoredJson(this.storageKeys.screener);
+                    this.maybeFocusGuide();
                     if (this.targetId) {
                         await this.refreshAll('init');
+                        this.persistScreenerContext();
                     }
+                    await this.refreshTaskBoardForCurrentScope();
                     this.$watch('targetId', () => this.onTargetChange());
                     this.startPolling();
 
@@ -733,6 +1228,48 @@
                     const list = this.currentTargetList();
                     const found = list.find(x => Number(x.id) === Number(this.targetId));
                     return found ? found.name : '';
+                },
+                readStoredJson(key) {
+                    try {
+                        const raw = window.localStorage.getItem(key);
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) {
+                        return null;
+                    }
+                },
+                writeStoredJson(key, value) {
+                    try {
+                        window.localStorage.setItem(key, JSON.stringify(value));
+                    } catch (_) {}
+                },
+                persistScreenerContext() {
+                    if (!this.targetId || !this.targetType) return;
+                    const payload = {
+                        targetType: this.targetType,
+                        targetId: this.targetId,
+                        targetName: this.currentTargetName() || this.guide.targetName || '',
+                        updatedAt: Date.now(),
+                    };
+                    this.workspace.screener = payload;
+                    this.writeStoredJson(this.storageKeys.screener, payload);
+                },
+                workflowTargetMeta() {
+                    const targetName = this.currentTargetName() || this.guide.targetName || (this.workspace.screener && this.workspace.screener.targetName) || '等待选择目标';
+                    const kind = this.targetType === 'group' ? '策略组' : '策略';
+                    return `当前目标：${targetName} · ${kind}`;
+                },
+                screenerDeepLink() {
+                    const params = new URLSearchParams();
+                    if (this.targetType) params.set('target_type', this.targetType);
+                    if (this.targetId) params.set('target_id', this.targetId);
+                    const name = this.currentTargetName() || this.guide.targetName;
+                    if (name) params.set('target_name', name);
+                    return `/screener${params.toString() ? '?' + params.toString() : ''}`;
+                },
+                lastStockUrl() {
+                    const stock = this.workspace.stock;
+                    if (!stock || !stock.code) return '/';
+                    return `/?code=${encodeURIComponent(stock.code)}`;
                 },
                 async loadTargets() {
                     try {
@@ -751,10 +1288,27 @@
                 },
                 onTargetTypeChange() {
                     this.syncTargetSelection();
+                    if (this.guide.active) this.guide.targetName = this.currentTargetName();
+                    this.persistScreenerContext();
+                    this.refreshTaskBoardForCurrentScope();
+                },
+                dismissGuide() {
+                    this.guide.active = false;
+                },
+                maybeFocusGuide() {
+                    if (!this.guide.active || this.guide.hasScrolled) return;
+                    this.guide.hasScrolled = true;
+                    this.$nextTick(() => {
+                        const el = this.$refs.toolbarCard;
+                        if (!el) return;
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
                 },
 
                 // ========== 状态切换：重置 + 取消 + 重新拉 ==========
                 onTargetChange() {
+                    if (this.guide.active) this.guide.targetName = this.currentTargetName();
+                    this.persistScreenerContext();
                     this.gen++;
                     this.cancelInflight();
                     this.results = null;
@@ -763,6 +1317,7 @@
                     this.historyPage = 1;
                     this.detail = null;
                     this.refreshAll('target-change');
+                    this.refreshTaskBoardForCurrentScope();
                 },
 
                 cancelInflight() {
@@ -799,6 +1354,16 @@
                     if (this.targetId) p.set('target_id', this.targetId);
                     return p.toString();
                 },
+                buildTaskQuery(includeSort = true) {
+                    const p = new URLSearchParams();
+                    p.set('task_type', 'screening');
+                    if (includeSort) p.set('sort', 'queue');
+                    if (this.taskScope === 'current' && this.targetType && this.targetId) {
+                        p.set('target_type', this.targetType);
+                        p.set('target_id', this.targetId);
+                    }
+                    return p.toString();
+                },
 
                 // ========== 主拉取 ==========
                 async refreshAll(reason) {
@@ -807,6 +1372,13 @@
                         this.loadStatus(),
                         this.loadResults(),
                         this.loadHistory(),
+                    ]);
+                },
+
+                async refreshTaskBoard() {
+                    await Promise.all([
+                        this.loadLatestTask(),
+                        this.loadTasks(),
                     ]);
                 },
 
@@ -838,20 +1410,77 @@
                     if (this.historyPage > totalPages) this.historyPage = Math.max(1, totalPages);
                 },
 
+                async setTaskScope(scope) {
+                    if (scope !== 'current' && scope !== 'all') return;
+                    if (this.taskScope === scope) return;
+                    this.taskScope = scope;
+                    this.taskStatusFilter = 'all';
+                    this.latestTask = null;
+                    this.tasks = null;
+                    await this.refreshTaskBoardForCurrentScope();
+                },
+
+                async refreshTaskBoardForCurrentScope() {
+                    if (this.taskScope === 'current' && !this.targetId) {
+                        this.latestTask = null;
+                        this.tasks = [];
+                        return;
+                    }
+                    await this.refreshTaskBoard();
+                },
+
+                async loadLatestTask() {
+                    const data = await this.fetchJson('latest-task', '/api/tasks?' + this.buildTaskQuery(false) + '&limit=1');
+                    if (data) this.latestTask = (data.tasks || [])[0] || null;
+                },
+
+                async loadTasks() {
+                    const data = await this.fetchJson('tasks', '/api/tasks?' + this.buildTaskQuery(true) + '&limit=20');
+                    if (data) this.tasks = data.tasks || [];
+                },
+
                 // ========== 运行 ==========
                 async runScreener() {
                     if (!this.canRun) return;
                     this.isStarting = true;
                     try {
+                        this.persistScreenerContext();
                         const res = await fetch('/api/screener/run?' + this.buildQuery());
                         const data = await res.json();
                         if (!res.ok) {
                             alert(data.message || data.error || '启动失败');
                             return;
                         }
-                        await this.loadStatus();
+                        this.dismissGuide();
+                        await Promise.all([this.loadStatus(), this.refreshTaskBoardForCurrentScope()]);
                     } finally {
                         this.isStarting = false;
+                    }
+                },
+
+                async actOnTask(taskId, action) {
+                    if (!taskId || this.taskActionId) return;
+                    this.taskActionId = taskId;
+                    try {
+                        let res;
+                        if (action === 'delete') {
+                            res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                        } else {
+                            res = await fetch(`/api/tasks/${taskId}/move`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action }),
+                            });
+                        }
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.error || '任务操作失败');
+                            return;
+                        }
+                        await this.refreshTaskBoardForCurrentScope();
+                        if (this.targetId) await this.loadStatus();
+                    } finally {
+                        this.taskActionId = null;
                     }
                 },
 
@@ -859,12 +1488,14 @@
                 startPolling() {
                     this.scheduleStatus();
                     this.scheduleResults();
+                    this.scheduleTasks();
                 },
 
                 stopPolling() {
                     if (this.timers.status) clearTimeout(this.timers.status);
                     if (this.timers.results) clearTimeout(this.timers.results);
-                    this.timers.status = this.timers.results = null;
+                    if (this.timers.tasks) clearTimeout(this.timers.tasks);
+                    this.timers.status = this.timers.results = this.timers.tasks = null;
                     this.cancelInflight();
                 },
 
@@ -887,6 +1518,15 @@
                             await this.loadHistory();
                         }
                         this.scheduleResults();
+                    }, interval);
+                },
+
+                scheduleTasks() {
+                    if (this.timers.tasks) clearTimeout(this.timers.tasks);
+                    const interval = (this.latestTask && (this.latestTask.status === 'running' || this.latestTask.status === 'queued')) ? 2000 : 5000;
+                    this.timers.tasks = setTimeout(async () => {
+                        await this.refreshTaskBoardForCurrentScope();
+                        this.scheduleTasks();
                     }, interval);
                 },
 
@@ -946,9 +1586,53 @@
                     if (Array.isArray(raw)) return raw;
                     return String(raw).split(',').map(s => s.trim()).filter(Boolean);
                 },
+                queuedTaskIndex(taskId) {
+                    const idx = this.queuedTasks.findIndex(item => Number(item.id) === Number(taskId));
+                    return idx >= 0 ? idx + 1 : 0;
+                },
+                taskStatusText(task) {
+                    if (!task) return '暂无任务';
+                    if (task.status === 'running') return '执行中';
+                    if (task.status === 'queued') return '排队中';
+                    if (task.status === 'completed') return '已完成';
+                    if (task.status === 'failed') return '失败';
+                    return task.status || '未知';
+                },
+                taskProgressPercent(task) {
+                    const total = Number((task && task.progress_total) || 0);
+                    const current = Number((task && task.progress_current) || 0);
+                    if (!total) return 0;
+                    return Math.min(100, Math.round(current / total * 100));
+                },
+                taskSummaryText(task) {
+                    if (!task) return '最近还没有扫描任务。';
+                    if (task.error_text) return task.error_text;
+                    if (task.progress_message) return task.progress_message;
+                    if (task.result_text) return task.result_text;
+                    return task.status === 'queued' ? '等待执行中' : '暂无更多说明';
+                },
+                isTaskBusy(taskId) {
+                    return Number(this.taskActionId) === Number(taskId);
+                },
                 stockDetailUrl(code) {
                     if (!code) return '#';
-                    return `/?code=${encodeURIComponent(code)}`;
+                    const params = new URLSearchParams();
+                    params.set('code', code);
+                    params.set('from', 'screener');
+                    if (this.targetType) params.set('back_target_type', this.targetType);
+                    if (this.targetId) params.set('back_target_id', String(this.targetId));
+                    const name = this.currentTargetName() || this.guide.targetName;
+                    if (name) params.set('back_target_name', name);
+                    return `/?${params.toString()}`;
+                },
+                downloadMissLog(item) {
+                    if (!item || !item.run_date || !item.run_time) return;
+                    const params = new URLSearchParams();
+                    if (item.target_type) params.set('target_type', item.target_type);
+                    if (item.target_id) params.set('target_id', item.target_id);
+                    if (item.run_token) params.set('run_token', item.run_token);
+                    const url = `/api/screener/history/${encodeURIComponent(item.run_date)}/${encodeURIComponent(item.run_time)}/miss-log.txt?${params.toString()}`;
+                    window.open(url, '_blank');
                 },
             };
         }

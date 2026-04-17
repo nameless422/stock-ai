@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from db import compat as db
 from app.core.strategy_engine import build_strategy_context, get_strategy_contract, run_strategy_code
@@ -13,6 +14,7 @@ from app.runtime import task_manager
 from app.services.market_service import (
     ai_analyze,
     calculate_indicators,
+    get_quote_bundle_async,
     get_kline_data_async,
     get_stock_info_async,
     search_stock_async,
@@ -24,11 +26,46 @@ from app.services.strategy_service import (
     get_target_options,
     strategy_repository,
 )
-from app.config import settings
+from app.config import has_database_config, settings
 
 
 router = APIRouter(prefix="/api")
 screening_repository = ScreeningRepository(settings.db_path)
+
+
+def _database_unavailable_response() -> JSONResponse:
+    return JSONResponse(
+        {"error": "数据库未配置，依赖数据库的功能暂不可用，请先设置 STOCK_AI_DB_URL"},
+        status_code=503,
+    )
+
+
+def _task_list_item(task: dict) -> dict:
+    result = task.get("result") or {}
+    return {
+        "id": task["id"],
+        "task_type": task["task_type"],
+        "queue_name": task.get("queue_name"),
+        "status": task["status"],
+        "priority": int(task.get("priority") or 0),
+        "run_token": task.get("run_token", ""),
+        "target_type": task.get("target_type"),
+        "target_id": task.get("target_id"),
+        "target_name": task.get("target_name"),
+        "progress_current": task.get("progress_current", 0),
+        "progress_total": task.get("progress_total", 0),
+        "progress_message": task.get("progress_message", ""),
+        "result_text": task.get("result_text", ""),
+        "matched_count": result.get("matched_count", 0),
+        "total_stocks": result.get("total_stocks", 0),
+        "failure_summary": result.get("failure_summary", ""),
+        "ai_summary": result.get("ai_summary", ""),
+        "raw_miss_log_count": int(result.get("raw_miss_log_count") or 0),
+        "error_text": task.get("error_text", ""),
+        "created_at": task.get("created_at", ""),
+        "started_at": task.get("started_at", ""),
+        "completed_at": task.get("completed_at", ""),
+    }
 
 
 @router.get("/stock/{stock_code}")
@@ -51,33 +88,31 @@ async def get_indicators(stock_code: str, period: str = "daily", adjust: str = "
 
 @router.get("/analyze/{stock_code}")
 async def analyze_stock(request: Request, stock_code: str, period: str = "daily", adjust: str = "qfq"):
-    info = await get_stock_info_async(stock_code, request.app.state.market_http_client)
-    if info.get("error"):
-        return JSONResponse(info, status_code=400)
-    kline_data = await get_kline_data_async(stock_code, period, adjust)
-    if kline_data.get("error"):
-        return JSONResponse(kline_data, status_code=400)
-    indicators = calculate_indicators(kline_data)
-    analysis = ai_analyze(stock_code, info.get("name", stock_code), kline_data, indicators)
-    return {"stock": info, "analysis": analysis, "indicators": indicators}
+    bundle = await get_quote_bundle_async(stock_code, period, adjust, request.app.state.market_http_client)
+    if bundle.get("error"):
+        return JSONResponse({"error": bundle["error"]}, status_code=400)
+    return {
+        "stock": bundle["stock"],
+        "analysis": bundle["analysis"],
+        "ai_analysis": bundle["analysis"],
+        "indicators": bundle["indicators"],
+    }
 
 
 @router.get("/search")
-async def search_stock(request: Request, q: str):
-    return await search_stock_async(q, request.app.state.market_http_client)
+async def search_stock(request: Request, q: Optional[str] = None, keyword: Optional[str] = None):
+    search_text = (q or keyword or "").strip()
+    if not search_text:
+        return JSONResponse({"error": "请输入搜索关键词", "results": []}, status_code=400)
+    return await search_stock_async(search_text, request.app.state.market_http_client)
 
 
 @router.get("/quote/{stock_code}")
 async def get_quote_bundle(request: Request, stock_code: str, period: str = "daily", adjust: str = "qfq"):
-    info = await get_stock_info_async(stock_code, request.app.state.market_http_client)
-    kline_data = await get_kline_data_async(stock_code, period, adjust)
-    if info.get("error"):
-        return JSONResponse(info, status_code=400)
-    if kline_data.get("error"):
-        return JSONResponse(kline_data, status_code=400)
-    indicators = calculate_indicators(kline_data)
-    analysis = ai_analyze(stock_code, info.get("name", stock_code), kline_data, indicators)
-    return {"stock": info, "kline": kline_data, "indicators": indicators, "analysis": analysis}
+    bundle = await get_quote_bundle_async(stock_code, period, adjust, request.app.state.market_http_client)
+    if bundle.get("error"):
+        return JSONResponse({"error": bundle["error"]}, status_code=400)
+    return bundle
 
 
 @router.get("/strategy/contract")
@@ -87,6 +122,8 @@ async def strategy_contract():
 
 @router.get("/strategies")
 async def get_strategy_list():
+    if not has_database_config():
+        return _database_unavailable_response()
     return {
         "strategies": strategy_repository.list_strategies(),
         "groups": strategy_repository.list_strategy_groups(),
@@ -95,6 +132,8 @@ async def get_strategy_list():
 
 @router.post("/strategies")
 async def create_strategy_api(request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
     payload = await request.json()
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -117,6 +156,8 @@ async def create_strategy_api(request: Request):
 
 @router.put("/strategies/{strategy_id}")
 async def update_strategy_api(strategy_id: int, request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
     payload = await request.json()
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -141,6 +182,8 @@ async def update_strategy_api(strategy_id: int, request: Request):
 
 @router.delete("/strategies/{strategy_id}")
 async def delete_strategy_api(strategy_id: int):
+    if not has_database_config():
+        return _database_unavailable_response()
     if not strategy_repository.delete_strategy(strategy_id):
         return JSONResponse({"ok": False, "error": "策略不存在"}, status_code=404)
     return {"ok": True}
@@ -148,6 +191,8 @@ async def delete_strategy_api(strategy_id: int):
 
 @router.post("/strategy-groups")
 async def create_strategy_group_api(request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
     payload = await request.json()
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -165,6 +210,8 @@ async def create_strategy_group_api(request: Request):
 
 @router.put("/strategy-groups/{group_id}")
 async def update_strategy_group_api(group_id: int, request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
     payload = await request.json()
     name = (payload.get("name") or "").strip()
     description = (payload.get("description") or "").strip()
@@ -183,6 +230,8 @@ async def update_strategy_group_api(group_id: int, request: Request):
 
 @router.delete("/strategy-groups/{group_id}")
 async def delete_strategy_group_api(group_id: int):
+    if not has_database_config():
+        return _database_unavailable_response()
     if not strategy_repository.delete_strategy_group(group_id):
         return JSONResponse({"ok": False, "error": "策略组不存在"}, status_code=404)
     return {"ok": True}
@@ -224,11 +273,15 @@ async def generate_strategy_context_api(request: Request):
 
 @router.get("/screener/targets")
 async def screener_targets():
+    if not has_database_config():
+        return _database_unavailable_response()
     return get_target_options()
 
 
 @router.get("/screener/run")
 async def run_screener(target_type: str = "strategy", target_id: Optional[int] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
     try:
         task = enqueue_screening_task(target_type=target_type, target_id=target_id, source="manual")
     except ValueError as exc:
@@ -246,6 +299,8 @@ async def run_screener(target_type: str = "strategy", target_id: Optional[int] =
 
 @router.get("/screener/status")
 async def screener_status(target_type: Optional[str] = None, target_id: Optional[int] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
     task = task_manager.get_latest_task(task_type="screening", target_type=target_type, target_id=target_id)
     if task:
         result = task.get("result") or {}
@@ -318,55 +373,69 @@ async def list_tasks_api(
     target_type: Optional[str] = None,
     target_id: Optional[int] = None,
     limit: int = 20,
+    sort: str = "recent",
 ):
+    if not has_database_config():
+        return _database_unavailable_response()
     tasks = task_manager.list_tasks(
         task_type=task_type,
         status=status,
         target_type=target_type,
         target_id=target_id,
         limit=max(1, min(limit, 100)),
+        sort_mode="queue" if sort == "queue" else "recent",
     )
-    items = []
-    for task in tasks:
-        result = task.get("result") or {}
-        items.append(
-            {
-                "id": task["id"],
-                "task_type": task["task_type"],
-                "queue_name": task.get("queue_name"),
-                "status": task["status"],
-                "run_token": task.get("run_token", ""),
-                "target_type": task.get("target_type"),
-                "target_id": task.get("target_id"),
-                "target_name": task.get("target_name"),
-                "progress_current": task.get("progress_current", 0),
-                "progress_total": task.get("progress_total", 0),
-                "progress_message": task.get("progress_message", ""),
-                "result_text": task.get("result_text", ""),
-                "matched_count": result.get("matched_count", 0),
-                "total_stocks": result.get("total_stocks", 0),
-                "failure_summary": result.get("failure_summary", ""),
-                "ai_summary": result.get("ai_summary", ""),
-                "raw_miss_log_count": int(result.get("raw_miss_log_count") or 0),
-                "error_text": task.get("error_text", ""),
-                "created_at": task.get("created_at", ""),
-                "started_at": task.get("started_at", ""),
-                "completed_at": task.get("completed_at", ""),
-            }
-        )
+    items = [_task_list_item(task) for task in tasks]
     return {"tasks": items}
+
+
+@router.get("/tasks/latest")
+async def get_latest_task_api(task_type: Optional[str] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
+    task = task_manager.get_latest_task(task_type=task_type)
+    return {"ok": True, "task": _task_list_item(task) if task else None}
 
 
 @router.get("/tasks/{task_id}")
 async def get_task_api(task_id: int):
+    if not has_database_config():
+        return _database_unavailable_response()
     task = task_manager.get_task(task_id)
     if not task:
         return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
     return {"ok": True, "task": task}
 
 
+@router.delete("/tasks/{task_id}")
+async def delete_task_api(task_id: int):
+    if not has_database_config():
+        return _database_unavailable_response()
+    ok, message = task_manager.delete_task(task_id)
+    if not ok:
+        status_code = 404 if message == "任务不存在" else 400
+        return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+    return {"ok": True, "message": message}
+
+
+@router.post("/tasks/{task_id}/move")
+async def move_task_api(task_id: int, request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
+    payload = await request.json()
+    action = str(payload.get("action") or "").strip().lower()
+    ok, message = task_manager.reorder_task(task_id, action)
+    if not ok:
+        status_code = 404 if message == "任务不存在" else 400
+        return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+    task = task_manager.get_task(task_id)
+    return {"ok": True, "message": message, "task": _task_list_item(task) if task else None}
+
+
 @router.get("/screener/results")
 async def get_screener_results(target_type: Optional[str] = None, target_id: Optional[int] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
     latest_task = task_manager.get_latest_task(
         task_type="screening",
         target_type=target_type,
@@ -422,6 +491,8 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
 
 @router.get("/screener/history")
 async def get_screener_history(target_type: Optional[str] = None, target_id: Optional[int] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
     latest_task = task_manager.get_latest_task(
         task_type="screening",
         target_type=target_type,
@@ -462,6 +533,8 @@ async def get_history_detail(
     target_id: Optional[int] = None,
     run_token: Optional[str] = None,
 ):
+    if not has_database_config():
+        return _database_unavailable_response()
     rows = screening_repository.query_results(
         run_token=run_token,
         run_date=run_date,
@@ -478,3 +551,38 @@ async def get_history_detail(
                 pass
         results.append(item)
     return {"run_date": run_date, "run_time": run_time, "total": len(results), "results": results}
+
+
+@router.get("/screener/history/{run_date}/{run_time}/miss-log.txt")
+async def download_history_miss_log(
+    run_date: str,
+    run_time: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    run_token: Optional[str] = None,
+):
+    if not has_database_config():
+        return _database_unavailable_response()
+    run_info = screening_repository.get_run(
+        run_token=run_token,
+        run_date=run_date,
+        run_time=run_time,
+        target_type=target_type,
+        target_id=target_id,
+    )
+    if not run_info:
+        return JSONResponse({"ok": False, "error": "运行记录不存在"}, status_code=404)
+    miss_log_text = str(run_info.get("miss_log_text") or "").strip()
+    if not miss_log_text:
+        return JSONResponse({"ok": False, "error": "当前运行没有可下载的未命中日志"}, status_code=404)
+    target_name = str(run_info.get("target_name") or "screening").strip() or "screening"
+    safe_target_name = "".join(ch if ch.isascii() and (ch.isalnum() or ch in ("-", "_")) else "_" for ch in target_name)
+    filename = f"{safe_target_name}_{run_date}_{run_time.replace(':', '-')}_miss_log.txt"
+    utf8_filename = quote(f"{target_name}_{run_date}_{run_time.replace(':', '-')}_miss_log.txt")
+    return PlainTextResponse(
+        miss_log_text,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{utf8_filename}"
+        },
+    )

@@ -7,13 +7,13 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 import numpy as np
 import pandas as pd
 
-from app.config import settings
+from app.config import has_database_config, settings
 from app.repositories.screening_repository import ScreeningRepository
 from app.core.screening_core import SwitchingMarketDataSource, stock_code_to_symbol
 
@@ -22,6 +22,7 @@ screening_repository = ScreeningRepository(settings.db_path)
 market_cache: dict = {}
 market_cache_lock = threading.Lock()
 market_sync_lock = threading.Lock()
+market_inflight: dict[tuple, asyncio.Future] = {}
 
 
 def cache_get(cache_key):
@@ -40,6 +41,35 @@ def cache_get(cache_key):
 def cache_set(cache_key, payload, ttl_seconds: float):
     with market_cache_lock:
         market_cache[cache_key] = (time.monotonic() + ttl_seconds, payload)
+
+
+async def run_singleflight(cache_key: tuple, producer: Callable[[], Awaitable[Any]]) -> Any:
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    loop = asyncio.get_running_loop()
+    owner = False
+    with market_cache_lock:
+        future = market_inflight.get(cache_key)
+        if future is None:
+            future = loop.create_future()
+            market_inflight[cache_key] = future
+            owner = True
+
+    if not owner:
+        return await future
+
+    try:
+        result = await producer()
+        future.set_result(result)
+        return result
+    except Exception as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with market_cache_lock:
+            market_inflight.pop(cache_key, None)
 
 
 def get_market_now() -> datetime:
@@ -78,6 +108,9 @@ def next_daily_run(hour: int, minute: int, now: Optional[datetime] = None) -> da
 
 
 def _stock_code_to_market_symbol(stock_code: str) -> str:
+    stock_code = (stock_code or "").strip().lower()
+    if stock_code.startswith(("sh", "sz", "bj")) and len(stock_code) == 8 and stock_code[2:].isdigit():
+        return stock_code
     if stock_code.startswith("6"):
         return f"sh{stock_code}"
     if stock_code.startswith(("0", "3")):
@@ -86,6 +119,8 @@ def _stock_code_to_market_symbol(stock_code: str) -> str:
 
 
 def parse_stock_info_payload(stock_code: str, text: str) -> dict:
+    symbol = _stock_code_to_market_symbol(stock_code)
+    display_code = symbol if stock_code.startswith(("sh", "sz", "bj")) else stock_code
     start = text.find('"') + 1
     end = text.find('"', start)
     data = text[start:end].split(',')
@@ -101,7 +136,9 @@ def parse_stock_info_payload(stock_code: str, text: str) -> dict:
     amount = float(data[9]) if data[9] else 0
     change = ((current - close_prev) / close_prev * 100) if close_prev else 0
     return {
-        "code": stock_code,
+        "code": stock_code[-6:] if symbol[2:].isdigit() else stock_code,
+        "symbol": symbol,
+        "display_code": display_code,
         "name": name if name else "",
         "price": current,
         "change": round(change, 2),
@@ -209,18 +246,23 @@ def get_kline_rows(
     config = settings.market_period_config.get(period, settings.market_period_config["daily"])
     limit = bars or config["default_bars"]
     remote_first = is_market_open() if prefer_remote is None else prefer_remote
+    db_enabled = has_database_config()
     if remote_first:
         remote_rows = fetch_remote_klines(stock_code, period, limit, adjust=adjust)
         if remote_rows:
-            screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+            if db_enabled:
+                screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
             return remote_rows[-limit:]
+        if not db_enabled:
+            return []
         return screening_repository.load_cached_klines(stock_code, period, adjust=adjust, limit=limit)
-    cached_rows = screening_repository.load_cached_klines(stock_code, period, adjust=adjust, limit=limit)
+    cached_rows = screening_repository.load_cached_klines(stock_code, period, adjust=adjust, limit=limit) if db_enabled else []
     if cached_rows:
         return cached_rows
     remote_rows = fetch_remote_klines(stock_code, period, limit, adjust=adjust)
     if remote_rows:
-        screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+        if db_enabled:
+            screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
         return remote_rows[-limit:]
     return []
 
@@ -331,14 +373,21 @@ async def get_stock_info_async(stock_code: str, client: httpx.AsyncClient) -> di
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
-    try:
-        symbol = _stock_code_to_market_symbol(stock_code)
-        resp = await client.get(f"https://hq.sinajs.cn/list={symbol}", headers={"Referer": "https://finance.sina.com.cn"})
-        result = parse_stock_info_payload(stock_code, resp.text)
-        cache_set(cache_key, result, settings.stock_info_ttl)
-        return result
-    except Exception as exc:
-        return {"error": str(exc)}
+
+    async def producer() -> dict:
+        try:
+            symbol = _stock_code_to_market_symbol(stock_code)
+            resp = await client.get(
+                f"https://hq.sinajs.cn/list={symbol}",
+                headers={"Referer": "https://finance.sina.com.cn"},
+            )
+            result = parse_stock_info_payload(stock_code, resp.text)
+            cache_set(cache_key, result, settings.stock_info_ttl)
+            return result
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    return await run_singleflight(cache_key, producer)
 
 
 async def get_kline_data_async(stock_code: str, period: str, adjust: str) -> dict:
@@ -346,33 +395,85 @@ async def get_kline_data_async(stock_code: str, period: str, adjust: str) -> dic
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
-    try:
-        return await asyncio.to_thread(get_kline_data, stock_code, period, adjust)
-    except Exception as exc:
-        return {"error": str(exc)}
+
+    async def producer() -> dict:
+        try:
+            return await asyncio.to_thread(get_kline_data, stock_code, period, adjust)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    return await run_singleflight(cache_key, producer)
 
 
 async def search_stock_async(keyword: str, client: httpx.AsyncClient) -> dict:
-    cache_key = ("search", keyword)
+    keyword = (keyword or "").strip()
+    cache_key = ("search", keyword.lower())
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
-    try:
-        url = f"https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15,16,17,18,19,110&key={keyword}&limit=10"
-        resp = await client.get(url, headers={"Referer": "https://finance.sina.com.cn"})
-        start = resp.text.find('"') + 1
-        end = resp.text.find('"', start)
-        data = resp.text[start:end]
-        results = []
-        for item in data.split(';'):
-            parts = item.split(',')
-            if len(parts) >= 4:
-                results.append({"code": parts[1], "name": parts[0], "price": 0, "change": 0})
-        payload = {"results": results[:10]}
-        cache_set(cache_key, payload, settings.search_ttl)
-        return payload
-    except Exception as exc:
-        return {"error": str(exc), "results": []}
+
+    async def producer() -> dict:
+        try:
+            url = f"https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15,16,17,18,19,110&key={keyword}&limit=10"
+            resp = await client.get(url, headers={"Referer": "https://finance.sina.com.cn"})
+            start = resp.text.find('"') + 1
+            end = resp.text.find('"', start)
+            data = resp.text[start:end]
+            results = []
+            seen_symbols = set()
+            for item in data.split(';'):
+                parts = item.split(',')
+                if len(parts) >= 4:
+                    stock_name = (parts[4].strip() if len(parts) > 4 else "") or (parts[6].strip() if len(parts) > 6 else "") or parts[0].strip()
+                    stock_code = parts[2].strip()
+                    market_symbol = parts[3].strip()
+                    if not stock_code and market_symbol:
+                        stock_code = market_symbol[-6:]
+                    if stock_code and market_symbol and market_symbol not in seen_symbols:
+                        seen_symbols.add(market_symbol)
+                        results.append({
+                            "code": stock_code,
+                            "symbol": market_symbol,
+                            "display_code": market_symbol if keyword.isdigit() else stock_code,
+                            "name": stock_name,
+                            "price": 0,
+                            "change": 0,
+                        })
+            payload = {"results": results[:10]}
+            cache_set(cache_key, payload, settings.search_ttl)
+            return payload
+        except Exception as exc:
+            return {"error": str(exc), "results": []}
+
+    return await run_singleflight(cache_key, producer)
+
+
+async def get_quote_bundle_async(stock_code: str, period: str, adjust: str, client: httpx.AsyncClient) -> dict:
+    cache_key = ("quote_bundle", stock_code, period, adjust)
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    async def producer() -> dict:
+        info, kline_data = await asyncio.gather(
+            get_stock_info_async(stock_code, client),
+            get_kline_data_async(stock_code, period, adjust),
+        )
+        if info.get("error"):
+            return {"error": info.get("error"), "error_source": "stock"}
+        if kline_data.get("error"):
+            return {"error": kline_data.get("error"), "error_source": "kline"}
+        indicators = calculate_indicators(kline_data)
+        result = {
+            "stock": info,
+            "kline": kline_data,
+            "indicators": indicators,
+            "analysis": ai_analyze(stock_code, info.get("name", stock_code), kline_data, indicators),
+        }
+        cache_set(cache_key, result, min(settings.stock_info_ttl, settings.kline_ttl))
+        return result
+
+    return await run_singleflight(cache_key, producer)
 
 
 def calculate_indicators(kline_data: dict) -> dict:

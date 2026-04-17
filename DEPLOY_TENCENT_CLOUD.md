@@ -2,6 +2,41 @@
 
 通用使用方式见 `USAGE.md`，这里仅保留腾讯云部署步骤。
 
+## 0. 本地一键部署
+
+如果你希望直接从本地把代码部署到远程机器，可以先准备配置文件：
+
+```bash
+cp deploy/remote.env.example .env.remote-secrets
+```
+
+把里面的 `REMOTE_HOST`、`REMOTE_USER`、数据库参数和 API Key 改成你的实际值。
+如果服务器还没配 SSH key，也可以额外填：
+
+```bash
+REMOTE_PASSWORD=你的服务器密码
+```
+
+然后在项目根目录执行：
+
+```bash
+./deploy/deploy_remote.sh
+```
+
+这个脚本会自动：
+
+- 打包当前项目代码
+- 上传到远程服务器 `/home/ubuntu/stock-ai`
+- 执行远程安装脚本
+- 写入 `/etc/stock-ai/stock-ai.env`
+- 重启并验证 `stock-ai` 服务
+
+默认会部署到：
+
+```text
+/home/ubuntu/stock-ai
+```
+
 ## 1. 登录服务器并初始化
 
 你的项目已经在服务器目录：

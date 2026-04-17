@@ -11,9 +11,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings:
     base_dir: Path = BASE_DIR
     db_path: str = os.getenv("STOCK_AI_DB_URL", "")
-    screening_max_workers: int = max(4, min(24, int(os.getenv("SCREENING_MAX_WORKERS", "12"))))
-    screening_submit_batch: int = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "200")))
-    screening_save_interval: int = max(10, int(os.getenv("SCREENING_SAVE_INTERVAL", "25")))
+    web_concurrency: int = max(1, min(8, int(os.getenv("WEB_CONCURRENCY", "2"))))
+    screening_max_workers: int = max(4, min(16, int(os.getenv("SCREENING_MAX_WORKERS", "8"))))
+    screening_submit_batch: int = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "100")))
+    screening_save_interval: int = max(20, int(os.getenv("SCREENING_SAVE_INTERVAL", "50")))
     stock_info_ttl: float = float(os.getenv("STOCK_INFO_TTL", "5"))
     kline_ttl: float = float(os.getenv("KLINE_TTL", "20"))
     search_ttl: float = float(os.getenv("SEARCH_TTL", "15"))
@@ -50,5 +51,13 @@ class Settings:
 
 settings = Settings()
 
-if not settings.db_path:
-    raise RuntimeError("STOCK_AI_DB_URL is required and must point to a MySQL database.")
+
+def has_database_config() -> bool:
+    return bool(settings.db_path.strip())
+
+
+def require_database_url() -> str:
+    db_url = settings.db_path.strip()
+    if not db_url:
+        raise RuntimeError("STOCK_AI_DB_URL is required and must point to a MySQL database.")
+    return db_url

@@ -21,6 +21,8 @@ class ScreeningRepository:
         results: list[dict],
         target_info: Optional[dict] = None,
         failure_summary: str = "",
+        miss_log_text: str = "",
+        miss_log_payload: Optional[dict] = None,
     ) -> None:
         conn = db.connect(self.db_path)
         cursor = conn.cursor()
@@ -32,9 +34,10 @@ class ScreeningRepository:
             """
             INSERT INTO screening_runs (
                 run_token, run_date, run_time, total_stocks, matched_count, status,
-                failure_summary, target_type, target_id, target_name, target_logic
+                failure_summary, miss_log_text, miss_log_payload,
+                target_type, target_id, target_name, target_logic
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_token,
@@ -44,6 +47,8 @@ class ScreeningRepository:
                 matched_count,
                 status,
                 failure_summary,
+                miss_log_text,
+                json.dumps(miss_log_payload or {}, ensure_ascii=False),
                 target_info.get("target_type"),
                 target_info.get("target_id"),
                 target_info.get("target_name"),
@@ -103,6 +108,37 @@ class ScreeningRepository:
         params = []
         if completed_only:
             sql += " AND status = 'completed'"
+        if target_type:
+            sql += " AND target_type = ?"
+            params.append(target_type)
+        if target_id is not None:
+            sql += " AND target_id = ?"
+            params.append(target_id)
+        sql += " ORDER BY created_at DESC LIMIT 1"
+        row = cursor.execute(sql, params).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_run(
+        self,
+        *,
+        run_token: Optional[str] = None,
+        run_date: Optional[str] = None,
+        run_time: Optional[str] = None,
+        target_type: Optional[str] = None,
+        target_id: Optional[int] = None,
+    ) -> Optional[dict]:
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
+        cursor = conn.cursor()
+        sql = "SELECT * FROM screening_runs WHERE 1 = 1"
+        params = []
+        if run_token:
+            sql += " AND run_token = ?"
+            params.append(run_token)
+        else:
+            sql += " AND run_date = ? AND run_time = ?"
+            params.extend([run_date, run_time])
         if target_type:
             sql += " AND target_type = ?"
             params.append(target_type)

@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 
 import httpx
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from db.schema import init_db
-from app.config import settings
+from app.config import has_database_config, require_database_url, settings
 from app.routers.api import router as api_router
 from app.routers.web import router as web_router
-from app.services.screener_service import bootstrap_task_system
 
 
+logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
@@ -33,9 +34,11 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    init_db(settings.db_path)
-    bootstrap_task_system()
     app = FastAPI(title="股票K线AI分析", description="A股实时数据 + K线图 + AI决策建议", lifespan=lifespan)
+    if has_database_config():
+        init_db(require_database_url())
+    else:
+        logger.warning("STOCK_AI_DB_URL is not configured; database-backed features will be unavailable.")
     app.include_router(web_router)
     app.include_router(api_router)
     app.mount("/static", StaticFiles(directory=str(settings.base_dir / "static")), name="static")

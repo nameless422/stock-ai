@@ -1,5 +1,6 @@
 import json
 from collections import Counter
+import threading
 from typing import Optional, Protocol
 from urllib.request import Request, urlopen
 
@@ -20,6 +21,9 @@ class MarketDataSource(Protocol):
 
 
 def stock_code_to_symbol(code: str) -> Optional[str]:
+    code = (code or "").strip().lower()
+    if code.startswith(("sh", "sz", "bj")) and len(code) == 8 and code[2:].isdigit():
+        return code
     if code.startswith("6"):
         return f"sh{code}"
     if code.startswith(("0", "3")):
@@ -213,6 +217,7 @@ class SwitchingMarketDataSource:
             TencentMarketDataSource(),
             EastMoneyMarketDataSource(),
         ]
+        self._local = threading.local()
 
     def list_stocks(self) -> list[dict]:
         return self._try_sources("list_stocks")
@@ -230,12 +235,28 @@ class SwitchingMarketDataSource:
                 method = getattr(source, method_name)
                 rows = method(*args)
                 if rows:
+                    self._set_last_source(method_name, source.name, len(rows), "")
                     return rows
             except Exception as exc:
                 last_error = exc
+                self._set_last_source(method_name, source.name, 0, str(exc))
         if last_error:
             raise last_error
+        self._set_last_source(method_name, "", 0, "empty")
         return []
+
+    def _set_last_source(self, method_name: str, source_name: str, rows: int, error: str) -> None:
+        meta = getattr(self._local, "meta", {})
+        meta[method_name] = {
+            "source": source_name,
+            "rows": rows,
+            "error": error,
+        }
+        self._local.meta = meta
+
+    def get_last_source_meta(self, method_name: str) -> dict:
+        meta = getattr(self._local, "meta", {})
+        return dict(meta.get(method_name) or {})
 
 
 class StockScreeningFilter(Protocol):
@@ -278,6 +299,11 @@ class StrategyScreeningFilter:
                 daily_klines,
                 weekly_klines,
             )
+            daily_source_meta = {}
+            weekly_source_meta = {}
+            if hasattr(self.data_source, "get_last_source_meta"):
+                daily_source_meta = self.data_source.get_last_source_meta("get_daily_klines")
+                weekly_source_meta = self.data_source.get_last_source_meta("get_weekly_klines")
 
             strategy_results = []
             for strategy in self.target_info.get("strategies", []):
@@ -319,8 +345,23 @@ class StrategyScreeningFilter:
                     "name": self.target_info.get("target_name"),
                     "logic": self.target_info.get("target_logic"),
                 },
+                "stock": context["stock"],
+                "data_source": {
+                    "pool": [
+                        getattr(source, "name", source.__class__.__name__)
+                        for source in getattr(self.data_source, "sources", [])
+                    ],
+                    "daily": daily_source_meta,
+                    "weekly": weekly_source_meta,
+                },
                 "strategy_results": strategy_results,
                 "snapshots": context["snapshots"],
+                "data_preview": {
+                    "daily_rows": len(daily_klines),
+                    "weekly_rows": len(weekly_klines),
+                    "daily_tail": daily_klines[-5:],
+                    "weekly_tail": weekly_klines[-5:],
+                },
             }
         except Exception as exc:
             result["error"] = str(exc)

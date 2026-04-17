@@ -2,502 +2,676 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>股票K线AI分析</title>
-    <script src="/static/vendor/echarts.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>股票分析 · Stock AI</title>
+    <link rel="stylesheet" href="/static/base.css">
+    <script defer src="/static/vendor/echarts.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        .hero {
+            margin-bottom: var(--sp-5);
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 100%;
-            padding: 12px;
-        }
-        
-        /* 搜索区域 */
-        .search-box {
+        .hero-title-row {
             display: flex;
-            gap: 10px;
-            margin-bottom: 16px;
+            align-items: baseline;
+            gap: var(--sp-3);
+            flex-wrap: wrap;
+            margin-bottom: var(--sp-2);
         }
-        
+        .hero-desc {
+            color: var(--text-2);
+            font-size: 13px;
+            max-width: 760px;
+        }
+        .nav-links {
+            display: flex;
+            gap: var(--sp-3);
+            align-items: center;
+            color: var(--text-3);
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+        .nav-links a {
+            color: var(--text-2);
+        }
+        .nav-links a:hover {
+            color: var(--text-1);
+        }
+
+        .search-card {
+            margin-bottom: var(--sp-4);
+        }
+        .search-toolbar {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) auto auto auto;
+            gap: var(--sp-3);
+            align-items: start;
+        }
+        .search-field {
+            position: relative;
+        }
         .search-input {
-            flex: 1;
-            padding: 12px 16px;
-            border: 1px solid #333;
-            border-radius: 8px;
-            background: #16213e;
-            color: #fff;
-            font-size: 16px;
-        }
-        
-        .search-btn {
-            padding: 12px 24px;
-            background: #e94560;
-            border: none;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        
-        .search-btn:active {
-            background: #c73e54;
-        }
-        
-        /* 股票信息卡片 */
-        .stock-info {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }
-        
-        .stock-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        
-        .stock-name {
-            font-size: 20px;
-            font-weight: bold;
-        }
-        
-        .stock-code {
-            color: #888;
+            min-height: 44px;
+            padding-left: 40px;
             font-size: 14px;
         }
-        
-        .stock-price {
-            font-size: 28px;
-            font-weight: bold;
-            color: #e94560;
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 12px;
+            color: var(--text-3);
+            pointer-events: none;
         }
-        
-        .stock-price.up {
-            color: #ff4d4d;
-        }
-        
-        .stock-price.down {
-            color: #26de81;
-        }
-        
-        .stock-detail {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            margin-top: 12px;
-        }
-        
-        .detail-item {
-            text-align: center;
-        }
-        
-        .detail-label {
-            color: #888;
-            font-size: 12px;
-        }
-        
-        .detail-value {
-            font-size: 14px;
-            margin-top: 4px;
-        }
-        
-        /* 周期切换 */
-        .period-tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-            overflow-x: auto;
-        }
-        
-        .period-tab {
-            padding: 8px 16px;
-            background: #16213e;
-            border: none;
-            border-radius: 6px;
-            color: #888;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        
-        .period-tab.active {
-            background: #e94560;
-            color: #fff;
-        }
-        
-        /* 图表容器 */
-        .chart-container {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 12px;
-            margin-bottom: 16px;
-        }
-        
-        #kline-chart {
-            width: 100%;
-            height: 400px;
-        }
-        
-        #macd-chart {
-            width: 100%;
-            height: 150px;
-        }
-        
-        /* 指标选择 */
-        .indicator-tabs {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 12px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-        }
-        
-        .indicator-tab {
-            padding: 6px 12px;
-            background: #0f3460;
-            border: none;
-            border-radius: 4px;
-            color: #aaa;
-            font-size: 12px;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        
-        .indicator-tab.active {
-            background: #e94560;
-            color: #fff;
-        }
-        
-        /* AI分析卡片 */
-        .ai-analysis {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }
-        
-        .ai-title {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .ai-badge {
-            padding: 4px 8px;
-            background: #e94560;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        
-        .ai-score {
-            font-size: 48px;
-            font-weight: bold;
-            text-align: center;
-            color: #e94560;
-        }
-        
-        .ai-score-label {
-            text-align: center;
-            color: #888;
-            font-size: 14px;
-            margin-bottom: 16px;
-        }
-        
-        .ai-advice {
-            display: inline-block;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            margin-bottom: 12px;
-        }
-        
-        .ai-advice.strong-buy {
-            background: #ff4d4d;
-            color: #fff;
-        }
-        
-        .ai-advice.buy {
-            background: #26de81;
-            color: #1a1a2e;
-        }
-        
-        .ai-advice.hold {
-            background: #ffc107;
-            color: #1a1a2e;
-        }
-        
-        .ai-advice.not-buy {
-            background: #888;
-            color: #fff;
-        }
-        
-        .ai-trend {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-        
-        .trend-item {
-            background: #0f3460;
-            padding: 12px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        
-        .trend-label {
-            color: #888;
-            font-size: 12px;
-        }
-        
-        .trend-value {
-            font-size: 16px;
-            font-weight: bold;
-            margin-top: 4px;
-        }
-        
-        .trend-value.up {
-            color: #ff4d4d;
-        }
-        
-        .trend-value.down {
-            color: #26de81;
-        }
-        
-        .trend-value.neutral {
-            color: #ffc107;
-        }
-        
-        .ai-reason {
-            background: #0f3460;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 14px;
-            line-height: 1.6;
-            color: #ccc;
-        }
-        
-        /* 加载状态 */
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #888;
-        }
-        
-        .loading::after {
-            content: "...";
-            animation: dots 1.5s steps(4, end) infinite;
-        }
-        
-        @keyframes dots {
-            0%, 20% { content: "."; }
-            40% { content: ".."; }
-            60%, 100% { content: "..."; }
-        }
-        
-        /* 错误提示 */
-        .error-msg {
-            text-align: center;
-            padding: 40px;
-            color: #e94560;
-        }
-        
-        /* 搜索结果 */
         .search-results {
-            background: #16213e;
-            border-radius: 8px;
-            margin-top: 8px;
-            max-height: 200px;
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            right: 0;
+            z-index: 20;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r-lg);
+            box-shadow: var(--shadow-md);
+            max-height: 280px;
             overflow-y: auto;
-        }
-        
-        .search-result-item {
-            padding: 12px 16px;
-            border-bottom: 1px solid #1a1a2e;
-            cursor: pointer;
-        }
-        
-        .search-result-item:active {
-            background: #0f3460;
-        }
-        
-        .search-result-name {
-            font-weight: bold;
-        }
-        
-        .search-result-code {
-            color: #888;
-            font-size: 12px;
-        }
-        
-        /* 隐藏搜索结果 */
-        .search-results {
             display: none;
         }
-        
         .search-results.show {
             display: block;
+        }
+        .search-result-item {
+            padding: var(--sp-3) var(--sp-4);
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background var(--t-fast) var(--ease);
+        }
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+        .search-result-item:hover {
+            background: var(--card-hover);
+        }
+        .search-result-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+        }
+        .search-result-code {
+            margin-top: 2px;
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .quick-picks {
+            margin-top: var(--sp-3);
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+        }
+        .quick-picks-label {
+            font-size: 12px;
+            color: var(--text-3);
+        }
+        .quick-pick {
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+            color: var(--text-2);
+            border-radius: var(--r-pill);
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+        }
+        .quick-pick:hover {
+            color: var(--text-1);
+            border-color: var(--primary);
+            background: rgba(91, 141, 239, 0.08);
+        }
+
+        .status-banner {
+            margin-bottom: var(--sp-4);
+            display: none;
+            align-items: center;
+            gap: var(--sp-3);
+            font-size: 13px;
+        }
+        .status-banner.is-visible {
+            display: flex;
+        }
+        .status-banner.is-error {
+            color: #FFD5DB;
+            background: rgba(239, 77, 107, 0.12);
+            border-color: rgba(239, 77, 107, 0.28);
+        }
+        .status-banner.is-visible.is-error {
+            display: block;
+        }
+
+        .quote-card {
+            margin-bottom: var(--sp-4);
+        }
+        .quote-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-4);
+            flex-wrap: wrap;
+            margin-bottom: var(--sp-4);
+        }
+        .quote-meta {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .quote-code {
+            font-family: var(--font-mono);
+            color: var(--text-3);
+            font-size: 12px;
+        }
+        .quote-price-wrap {
+            text-align: right;
+        }
+        .stock-price {
+            font-size: clamp(28px, 4vw, 40px);
+            line-height: 1;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .stock-price.up {
+            color: var(--up);
+        }
+        .stock-price.down {
+            color: var(--down);
+        }
+        .stock-change {
+            margin-top: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .quote-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: var(--sp-3);
+        }
+        .quote-stat {
+            padding: var(--sp-3) var(--sp-4);
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+        }
+        .quote-stat-label {
+            font-size: 11px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .quote-stat-value {
+            margin-top: 4px;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-1);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .content-grid {
+            display: grid;
+            gap: var(--sp-4);
+        }
+        @media (min-width: 1024px) {
+            .content-grid {
+                grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+                align-items: start;
+            }
+            .side-stack {
+                position: sticky;
+                top: var(--sp-4);
+            }
+        }
+        .side-stack {
+            display: grid;
+            gap: var(--sp-4);
+        }
+
+        .chart-card .card-header {
+            margin-bottom: var(--sp-3);
+        }
+        .chart-toolbar {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: var(--sp-3);
+            align-items: center;
+            margin-bottom: var(--sp-3);
+        }
+        .chart-toolbar-secondary {
+            margin-bottom: var(--sp-4);
+        }
+        .chart-hint {
+            color: var(--text-3);
+            font-size: 12px;
+            text-align: right;
+        }
+        #kline-chart {
+            width: 100%;
+            height: 560px;
+        }
+
+        .analysis-card {
+            min-height: 280px;
+        }
+        .analysis-score-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-4);
+        }
+        .ai-score {
+            font-size: 56px;
+            line-height: 1;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .ai-score-label {
+            color: var(--text-3);
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        .ai-advice {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 92px;
+            padding: 8px 14px;
+            border-radius: var(--r-pill);
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .ai-advice.strong-buy {
+            color: #fff;
+            background: var(--up);
+        }
+        .ai-advice.buy {
+            color: #092117;
+            background: #63D3AE;
+        }
+        .ai-advice.hold {
+            color: #312204;
+            background: var(--accent);
+        }
+        .ai-advice.not-buy {
+            color: #fff;
+            background: #5A6A85;
+        }
+        .ai-trend-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-4);
+        }
+        .trend-item {
+            padding: var(--sp-3) var(--sp-4);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            background: var(--bg-elev);
+        }
+        .trend-label {
+            color: var(--text-3);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .trend-value {
+            margin-top: 6px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .trend-value.up {
+            color: var(--up);
+        }
+        .trend-value.down {
+            color: var(--down);
+        }
+        .trend-value.neutral {
+            color: var(--accent);
+        }
+        .ai-reason {
+            padding: var(--sp-4);
+            border-radius: var(--r-md);
+            background: var(--bg-elev);
+            border-left: 3px solid var(--primary);
+            color: var(--text-2);
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .helper-list {
+            display: grid;
+            gap: var(--sp-3);
+        }
+        .helper-item {
+            padding: var(--sp-3) var(--sp-4);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            background: var(--bg-elev);
+        }
+        .helper-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+            margin-bottom: 4px;
+        }
+        .helper-desc {
+            font-size: 12px;
+            color: var(--text-2);
+        }
+
+        .footer {
+            margin-top: var(--sp-5);
+            justify-content: center;
+        }
+
+        @media (max-width: 960px) {
+            .search-toolbar {
+                grid-template-columns: 1fr 1fr;
+            }
+            .search-toolbar .search-field {
+                grid-column: 1 / -1;
+            }
+            .chart-toolbar {
+                grid-template-columns: 1fr;
+            }
+            .chart-hint {
+                text-align: left;
+            }
+        }
+        @media (max-width: 720px) {
+            .page {
+                padding: var(--sp-4);
+            }
+            .quote-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .quote-stat:last-child {
+                grid-column: span 2;
+            }
+            .analysis-score-row {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .ai-trend-grid {
+                grid-template-columns: 1fr;
+            }
+            #kline-chart {
+                height: 460px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- 搜索区域 -->
-        <div class="search-box">
-            <input type="text" class="search-input" id="stockCode" placeholder="输入股票代码，如 000001" value="000001">
-            <button class="search-btn" onclick="searchStock()">查询</button>
-            <a href="/screener" class="search-btn" style="text-decoration:none;background:#26de81;">📈 策略选股</a>
-            <a href="/strategies" class="search-btn" style="text-decoration:none;background:#f5b041;">🧠 策略管理</a>
-        </div>
-        <div class="search-results" id="searchResults"></div>
-        
-        <!-- 股票信息 -->
-        <div id="stockInfo" class="stock-info" style="display: none;">
-            <div class="stock-header">
-                <div>
-                    <div class="stock-name" id="stockName">-</div>
-                    <div class="stock-code" id="stockCodeDisplay">-</div>
+    <div class="page">
+        <header class="hero">
+            <div class="hero-title-row">
+                <h1 class="title-xl">股票分析</h1>
+                <span class="badge badge-accent">单票查询</span>
+            </div>
+            <div class="hero-desc">
+                输入股票代码或名称，查看 K 线、技术指标和 AI 分析结果。页面结构和交互已经向
+                <a href="/screener">策略选股</a> / <a href="/strategies">策略管理</a> 统一。
+            </div>
+        </header>
+
+        <section class="workflow-switcher" aria-label="跨页切换">
+            <div class="workflow-card">
+                <div class="workflow-step">Step 1</div>
+                <div class="workflow-title">策略管理</div>
+                <div class="workflow-desc">把判断逻辑沉淀成策略，再带着它去筛选页批量执行。</div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" href="/strategies">去管理策略</a>
                 </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-step">Step 2</div>
+                <div class="workflow-title">筛选股票</div>
+                <div class="workflow-desc">保留最近一次筛选目标，分析单票时也能随时切回刚才的结果。</div>
+                <div class="workflow-meta" id="workflowScreenerMeta">最近筛选：暂无记录</div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" href="/screener" id="workflowScreenerLink">去策略选股</a>
+                    <a class="btn btn-ghost btn-sm" href="/screener" id="workflowBackToScreener" style="display:none;">返回刚才筛选</a>
+                </div>
+            </div>
+            <div class="workflow-card is-active">
+                <div class="workflow-step">Step 3</div>
+                <div class="workflow-title">股票详情</div>
+                <div class="workflow-desc">在这里看 K 线、指标和 AI 分析，需要时继续回到筛选或策略页。</div>
+                <div class="workflow-meta" id="workflowCurrentStock">当前股票：加载中</div>
+                <div class="workflow-actions">
+                    <a class="btn btn-primary btn-sm" href="/" id="workflowCurrentStockLink">查看当前股票</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="card card-compact search-card">
+            <div class="search-toolbar">
+                <div class="search-field">
+                    <span class="search-icon">⌕</span>
+                    <input
+                        type="text"
+                        class="input search-input"
+                        id="stockCode"
+                        placeholder="输入股票代码或名称，如 000001 / 平安银行"
+                        value="000001"
+                        autocomplete="off"
+                    >
+                    <div class="search-results" id="searchResults"></div>
+                </div>
+                <button class="btn btn-primary" onclick="searchStock()">查询股票</button>
+                <a class="btn btn-ghost" href="/screener">策略选股</a>
+                <a class="btn btn-ghost" href="/strategies">策略管理</a>
+            </div>
+            <div class="quick-picks">
+                <span class="quick-picks-label">常看股票</span>
+                <button class="quick-pick" type="button" onclick="selectStock('000001')">平安银行</button>
+                <button class="quick-pick" type="button" onclick="selectStock('600519')">贵州茅台</button>
+                <button class="quick-pick" type="button" onclick="selectStock('000858')">五粮液</button>
+                <button class="quick-pick" type="button" onclick="selectStock('601318')">中国平安</button>
+            </div>
+        </section>
+
+        <div class="card card-compact status-banner" id="loading">
+            <span class="spinner"></span>
+            <span>正在拉取行情、指标和分析结果…</span>
+        </div>
+        <div class="card card-compact status-banner status-banner is-error" id="errorMsg"></div>
+
+        <section class="card quote-card" id="stockInfo" style="display: none;">
+            <div class="quote-head">
                 <div>
+                    <div class="title-lg" id="stockName">-</div>
+                    <div class="quote-meta">
+                        <span class="quote-code" id="stockCodeDisplay">-</span>
+                        <span class="badge badge-dim" id="quotePeriodBadge">日线视图</span>
+                    </div>
+                </div>
+                <div class="quote-price-wrap">
                     <div class="stock-price" id="stockPrice">-</div>
-                    <div id="stockChange" style="text-align: right; font-size: 14px;">-</div>
+                    <div class="stock-change" id="stockChange">-</div>
                 </div>
             </div>
-            <div class="stock-detail">
-                <div class="detail-item">
-                    <div class="detail-label">开盘</div>
-                    <div class="detail-value" id="stockOpen">-</div>
+            <div class="quote-grid">
+                <div class="quote-stat">
+                    <div class="quote-stat-label">开盘</div>
+                    <div class="quote-stat-value" id="stockOpen">-</div>
                 </div>
-                <div class="detail-item">
-                    <div class="detail-label">最高</div>
-                    <div class="detail-value" id="stockHigh">-</div>
+                <div class="quote-stat">
+                    <div class="quote-stat-label">最高</div>
+                    <div class="quote-stat-value" id="stockHigh">-</div>
                 </div>
-                <div class="detail-item">
-                    <div class="detail-label">最低</div>
-                    <div class="detail-value" id="stockLow">-</div>
+                <div class="quote-stat">
+                    <div class="quote-stat-label">最低</div>
+                    <div class="quote-stat-value" id="stockLow">-</div>
                 </div>
-                <div class="detail-item">
-                    <div class="detail-label">成交量</div>
-                    <div class="detail-value" id="stockVolume">-</div>
+                <div class="quote-stat">
+                    <div class="quote-stat-label">成交量</div>
+                    <div class="quote-stat-value" id="stockVolume">-</div>
+                </div>
+                <div class="quote-stat">
+                    <div class="quote-stat-label">当前周期</div>
+                    <div class="quote-stat-value" id="currentPeriodText">日K</div>
                 </div>
             </div>
+        </section>
+
+        <div class="content-grid">
+            <section class="card chart-card">
+                <div class="card-header">
+                    <div>
+                        <div class="title-lg">K 线与技术指标</div>
+                        <div class="text-2 text-small">支持切换周期和叠加常用指标，图表风格与选股页统一。</div>
+                    </div>
+                </div>
+
+                <div class="chart-toolbar">
+                    <div class="seg" id="periodTabs">
+                        <button class="seg-btn active period-tab" data-period="daily" onclick="changePeriod('daily')">日K</button>
+                        <button class="seg-btn period-tab" data-period="weekly" onclick="changePeriod('weekly')">周K</button>
+                        <button class="seg-btn period-tab" data-period="monthly" onclick="changePeriod('monthly')">月K</button>
+                    </div>
+                    <div class="chart-hint" id="chartHint">已选择 1 个指标</div>
+                </div>
+
+                <div class="chart-toolbar-secondary">
+                    <div class="seg" id="indicatorTabs" style="flex-wrap: wrap;">
+                        <button class="seg-btn active indicator-tab" data-indicator="MA" onclick="toggleIndicator('MA')">均线</button>
+                        <button class="seg-btn indicator-tab" data-indicator="MACD" onclick="toggleIndicator('MACD')">MACD</button>
+                        <button class="seg-btn indicator-tab" data-indicator="KDJ" onclick="toggleIndicator('KDJ')">KDJ</button>
+                        <button class="seg-btn indicator-tab" data-indicator="RSI" onclick="toggleIndicator('RSI')">RSI</button>
+                        <button class="seg-btn indicator-tab" data-indicator="BOLL" onclick="toggleIndicator('BOLL')">BOLL</button>
+                    </div>
+                </div>
+
+                <div id="kline-chart"></div>
+            </section>
+
+            <aside class="side-stack">
+                <section class="card analysis-card" id="aiAnalysisBox" style="display: none;">
+                    <div class="card-header">
+                        <div>
+                            <div class="title-lg">AI 智能分析</div>
+                            <div class="text-2 text-small">结合当前周期的技术指标给出趋势与建议。</div>
+                        </div>
+                        <span class="badge badge-accent">技术面</span>
+                    </div>
+                    <div class="analysis-score-row">
+                        <div>
+                            <div class="ai-score" id="aiScore">-</div>
+                            <div class="ai-score-label">综合评分（1-10）</div>
+                        </div>
+                        <span class="ai-advice hold" id="aiAdvice">观望</span>
+                    </div>
+                    <div class="ai-trend-grid">
+                        <div class="trend-item">
+                            <div class="trend-label">短期趋势</div>
+                            <div class="trend-value neutral" id="shortTrend">-</div>
+                        </div>
+                        <div class="trend-item">
+                            <div class="trend-label">中期趋势</div>
+                            <div class="trend-value neutral" id="mediumTrend">-</div>
+                        </div>
+                    </div>
+                    <div class="ai-reason" id="aiReason">-</div>
+                </section>
+
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="title-lg">下一步操作</div>
+                            <div class="text-2 text-small">从单票分析继续往策略化流程走。</div>
+                        </div>
+                    </div>
+                    <div class="helper-list">
+                        <div class="helper-item">
+                            <div class="helper-title">看完单票后去跑全市场</div>
+                            <div class="helper-desc">如果当前票的形态比较明确，可以去 <a href="/screener">策略选股</a> 用已有策略批量扫描。</div>
+                        </div>
+                        <div class="helper-item">
+                            <div class="helper-title">把思路沉淀成策略</div>
+                            <div class="helper-desc">在 <a href="/strategies">策略管理</a> 里把你的判断逻辑写成可复用规则，后续就不用一只只翻。</div>
+                        </div>
+                        <div class="helper-item">
+                            <div class="helper-title">搜索支持名称和代码</div>
+                            <div class="helper-desc">输入至少 2 个字符会出现联想结果，回车可直接查询当前输入。</div>
+                        </div>
+                    </div>
+                </section>
+            </aside>
         </div>
-        
-        <!-- K线图 -->
-        <div class="chart-container">
-            <div class="period-tabs">
-                <button class="period-tab active" onclick="changePeriod('daily')">日K</button>
-                <button class="period-tab" onclick="changePeriod('weekly')">周K</button>
-                <button class="period-tab" onclick="changePeriod('monthly')">月K</button>
-            </div>
-            
-            <div class="indicator-tabs">
-                <button class="indicator-tab active" onclick="toggleIndicator('MA')">均线</button>
-                <button class="indicator-tab" onclick="toggleIndicator('MACD')">MACD</button>
-                <button class="indicator-tab" onclick="toggleIndicator('KDJ')">KDJ</button>
-                <button class="indicator-tab" onclick="toggleIndicator('RSI')">RSI</button>
-                <button class="indicator-tab" onclick="toggleIndicator('BOLL')">BOLL</button>
-            </div>
-            
-            <div id="kline-chart"></div>
-            <div id="macd-chart" style="display: none;"></div>
-        </div>
-        
-        <!-- AI分析 -->
-        <div class="ai-analysis" id="aiAnalysisBox" style="display: none;">
-            <div class="ai-title">
-                <span>🤖 AI 智能分析</span>
-                <span class="ai-badge">基于技术指标</span>
-            </div>
-            <div class="ai-score" id="aiScore">-</div>
-            <div class="ai-score-label">综合评分 (1-10)</div>
-            
-            <div style="text-align: center;">
-                <span class="ai-advice" id="aiAdvice">-</span>
-            </div>
-            
-            <div class="ai-trend">
-                <div class="trend-item">
-                    <div class="trend-label">短期趋势</div>
-                    <div class="trend-value" id="shortTrend">-</div>
-                </div>
-                <div class="trend-item">
-                    <div class="trend-label">中期趋势</div>
-                    <div class="trend-value" id="mediumTrend">-</div>
-                </div>
-            </div>
-            
-            <div class="ai-reason" id="aiReason">-</div>
-        </div>
-        
-        <div class="loading" id="loading" style="display: none;">正在加载数据</div>
-        <div class="error-msg" id="errorMsg" style="display: none;"></div>
+
+        <footer class="nav-links footer">
+            <a href="/">股票分析</a>
+            <span>·</span>
+            <a href="/screener">策略选股</a>
+            <span>·</span>
+            <a href="/strategies">策略管理</a>
+        </footer>
     </div>
-    
+
     <script>
+        const initialQuoteBundle = __INITIAL_QUOTE_JSON__;
         let currentStock = '000001';
         let currentPeriod = 'daily';
         let currentIndicators = ['MA'];
-        let klineChart, macdChart;
+        let klineChart = null;
+        let currentQuoteBundle = null;
         let klineData = null;
         let indicatorsData = null;
-        
-        // 初始化图表
+        let chartsReady = false;
+        let searchTimer = null;
+        let searchAbortController = null;
+        let activeLoadToken = 0;
+        const STORAGE_KEYS = {
+            stock: 'stock_ai_last_stock',
+            screener: 'stock_ai_last_screener',
+        };
+
+        const PERIOD_LABELS = {
+            daily: '日K',
+            weekly: '周K',
+            monthly: '月K',
+        };
+
         function initCharts() {
             if (typeof echarts === 'undefined') {
                 showError('图表库加载失败，请检查静态资源是否可访问');
                 return;
             }
+
             klineChart = echarts.init(document.getElementById('kline-chart'));
-            macdChart = echarts.init(document.getElementById('macd-chart'));
-            
+            chartsReady = true;
+
             window.addEventListener('resize', () => {
-                klineChart.resize();
-                macdChart.resize();
+                if (klineChart) {
+                    klineChart.resize();
+                }
             });
         }
-        
-        // 搜索股票
-        async function searchStock() {
+
+        function searchStock() {
             const code = document.getElementById('stockCode').value.trim();
             if (!code) return;
-            
             currentStock = code;
-            await loadData();
-        }
-        
-        // 切换周期
-        function changePeriod(period) {
-            currentPeriod = period;
-            // 更新按钮状态
-            document.querySelectorAll('.period-tab').forEach(tab => {
-                const label = tab.textContent.trim();
-                let isActive = false;
-                if (period === 'daily' && label === '日K') isActive = true;
-                if (period === 'weekly' && label === '周K') isActive = true;
-                if (period === 'monthly' && label === '月K') isActive = true;
-                tab.classList.toggle('active', isActive);
-            });
+            hideSearchResults();
             loadData();
         }
-        
-        // 切换指标
+
+        function changePeriod(period) {
+            currentPeriod = period;
+            syncPeriodTabs();
+            updateQuotePeriod();
+            loadData();
+        }
+
         function toggleIndicator(indicator) {
             const idx = currentIndicators.indexOf(indicator);
             if (idx > -1) {
@@ -505,291 +679,668 @@
             } else {
                 currentIndicators.push(indicator);
             }
-            
-            // 更新按钮状态
-            const indicatorMap = {'均线': 'MA', 'MACD': 'MACD', 'KDJ': 'KDJ', 'RSI': 'RSI', 'BOLL': 'BOLL'};
-            document.querySelectorAll('.indicator-tab').forEach(tab => {
-                const label = tab.textContent.trim();
-                const key = indicatorMap[label] || label;
-                tab.classList.toggle('active', currentIndicators.includes(key));
-            });
-            
-            // 显示/隐藏MACD副图
-            document.getElementById('macd-chart').style.display = 
-                currentIndicators.includes('MACD') || currentIndicators.includes('KDJ') || currentIndicators.includes('RSI') 
-                ? 'block' : 'none';
-            
+
+            if (currentIndicators.length === 0) {
+                currentIndicators = ['MA'];
+            }
+
+            syncIndicatorTabs();
+
             if (klineData && indicatorsData) {
                 renderCharts();
             }
         }
-        
-        // 加载数据
+
+        function syncPeriodTabs() {
+            document.querySelectorAll('.period-tab').forEach((tab) => {
+                tab.classList.toggle('active', tab.dataset.period === currentPeriod);
+            });
+        }
+
+        function syncIndicatorTabs() {
+            document.querySelectorAll('.indicator-tab').forEach((tab) => {
+                tab.classList.toggle('active', currentIndicators.includes(tab.dataset.indicator));
+            });
+
+            const hint = document.getElementById('chartHint');
+            hint.textContent = `已选择 ${currentIndicators.length} 个指标`;
+        }
+
+        function updateQuotePeriod() {
+            const label = PERIOD_LABELS[currentPeriod] || '日K';
+            document.getElementById('quotePeriodBadge').textContent = `${label}视图`;
+            document.getElementById('currentPeriodText').textContent = label;
+        }
+
         async function loadData() {
+            const loadToken = ++activeLoadToken;
             showLoading(true);
             hideError();
-            
+            document.getElementById('aiAnalysisBox').style.display = 'none';
+            updateUrl();
+
             try {
-                const res = await fetch(`/api/quote/${currentStock}?period=${currentPeriod}`);
-                const data = await res.json();
-                const info = data.stock_info || data;
+                const data = await getQuoteBundle(loadToken);
+                if (!data) {
+                    return;
+                }
+
+                currentQuoteBundle = data;
+                const info = data.stock || data.stock_info || data;
                 klineData = data.kline;
                 indicatorsData = data.indicators;
-                
+
                 if (info.error) {
                     showError(info.error);
+                    hideDataPanels();
                     return;
                 }
                 if (!klineData || klineData.error || !indicatorsData || indicatorsData.error) {
                     showError((klineData && klineData.error) || (indicatorsData && indicatorsData.error) || '行情数据加载失败');
+                    hideDataPanels();
                     return;
                 }
-                
-                // 更新股票信息
+
                 updateStockInfo(info);
-                
-                // 渲染图表
-                renderCharts();
-                
-                // 加载AI分析
-                loadAIAnalysis();
-                
+
+                if (chartsReady) {
+                    renderCharts();
+                }
+
+                scheduleAIAnalysisRender(data);
                 document.getElementById('stockInfo').style.display = 'block';
             } catch (e) {
+                if (loadToken !== activeLoadToken) {
+                    return;
+                }
                 showError('加载失败: ' + e.message);
+                hideDataPanels();
             } finally {
-                showLoading(false);
+                if (loadToken === activeLoadToken) {
+                    showLoading(false);
+                }
             }
         }
-        
-        // 更新股票信息
+
+        async function getQuoteBundle(loadToken) {
+            const canUseInitialBundle =
+                currentQuoteBundle === null &&
+                currentStock === '000001' &&
+                currentPeriod === 'daily' &&
+                initialQuoteBundle &&
+                !initialQuoteBundle.error;
+
+            if (canUseInitialBundle) {
+                return initialQuoteBundle;
+            }
+
+            const res = await fetch(`/api/quote/${currentStock}?period=${currentPeriod}`);
+            const data = await res.json();
+
+            if (loadToken !== activeLoadToken) {
+                return null;
+            }
+
+            if (!res.ok) {
+                showError(data.error || '行情数据加载失败');
+                hideDataPanels();
+                return null;
+            }
+
+            return data;
+        }
+
         function updateStockInfo(info) {
-            document.getElementById('stockName').textContent = info.name;
-            document.getElementById('stockCodeDisplay').textContent = info.code;
-            document.getElementById('stockPrice').textContent = info.price.toFixed(2) + '元';
-            
+            document.getElementById('stockName').textContent = info.name || '-';
+            document.getElementById('stockCodeDisplay').textContent = info.display_code || info.symbol || info.code || '-';
+            document.getElementById('stockPrice').textContent = Number(info.price || 0).toFixed(2) + ' 元';
+
             const priceEl = document.getElementById('stockPrice');
             priceEl.className = 'stock-price ' + (info.change > 0 ? 'up' : info.change < 0 ? 'down' : '');
-            
-            const changeStr = (info.change > 0 ? '+' : '') + info.change.toFixed(2) + '%';
-            document.getElementById('stockChange').textContent = changeStr;
-            document.getElementById('stockChange').style.color = info.change > 0 ? '#ff4d4d' : info.change < 0 ? '#26de81' : '#888';
-            
-            document.getElementById('stockOpen').textContent = info.open.toFixed(2);
-            document.getElementById('stockHigh').textContent = info.high.toFixed(2);
-            document.getElementById('stockLow').textContent = info.low.toFixed(2);
-            document.getElementById('stockVolume').textContent = formatVolume(info.volume);
+
+            const changeStr = `${info.change > 0 ? '+' : ''}${Number(info.change || 0).toFixed(2)}%`;
+            const changeEl = document.getElementById('stockChange');
+            changeEl.textContent = changeStr;
+            changeEl.style.color = info.change > 0 ? 'var(--up)' : info.change < 0 ? 'var(--down)' : 'var(--text-3)';
+
+            document.getElementById('stockOpen').textContent = Number(info.open || 0).toFixed(2);
+            document.getElementById('stockHigh').textContent = Number(info.high || 0).toFixed(2);
+            document.getElementById('stockLow').textContent = Number(info.low || 0).toFixed(2);
+            document.getElementById('stockVolume').textContent = formatVolume(Number(info.volume || 0));
+            updateQuotePeriod();
+            persistStockContext(info);
+            renderWorkflowContext();
         }
-        
-        // 格式化成交量
+
         function formatVolume(v) {
             if (v >= 100000000) return (v / 100000000).toFixed(2) + '亿';
             if (v >= 10000) return (v / 10000).toFixed(2) + '万';
-            return v.toFixed(0);
+            return Number(v || 0).toFixed(0);
         }
-        
-        // 渲染图表
-        function renderCharts() {
-            if (!klineData || !indicatorsData || klineData.error || indicatorsData.error) return;
-            
-            // K线图
-            const klineOption = {
-                backgroundColor: 'transparent',
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: { type: 'cross' }
-                },
-                legend: { show: false },
-                grid: [
-                    { left: '10%', right: '8%', top: '10%', height: '60%' },
-                    { left: '10%', right: '8%', top: '75%', height: '15%' }
-                ],
-                xAxis: [
-                    { type: 'category', data: klineData.dates, gridIndex: 0, boundaryGap: false },
-                    { type: 'category', data: klineData.dates, gridIndex: 1, boundaryGap: false }
-                ],
-                yAxis: [
-                    { type: 'value', gridIndex: 0, scale: true },
-                    { type: 'value', gridIndex: 1, scale: true }
-                ],
-                series: [
+
+        function buildSecondarySeries(hasSecondary) {
+            const series = [];
+            if (!hasSecondary) return series;
+
+            if (currentIndicators.includes('MACD') && indicatorsData.macd) {
+                const macdData = indicatorsData.macd;
+                series.push(
                     {
-                        name: 'K线',
-                        type: 'candlestick',
-                        data: klineData.close.map((_, i) => [
-                            klineData.open[i], klineData.close[i], klineData.low[i], klineData.high[i]
-                        ]),
-                        xAxisIndex: 0,
-                        yAxisIndex: 0,
-                        itemStyle: {
-                            color: '#ff4d4d', color0: '#26de81',
-                            borderColor: '#ff4d4d', borderColor0: '#26de81'
-                        }
+                        name: 'MACD+',
+                        type: 'bar',
+                        data: (macdData.bar || []).map((v) => v > 0 ? v : 0),
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        itemStyle: { color: '#E05D5D' },
+                    },
+                    {
+                        name: 'MACD-',
+                        type: 'bar',
+                        data: (macdData.bar || []).map((v) => v < 0 ? v : 0),
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        itemStyle: { color: '#29B48C' },
+                    },
+                    {
+                        name: 'DIF',
+                        type: 'line',
+                        data: macdData.dif || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1.5 },
+                    },
+                    {
+                        name: 'DEA',
+                        type: 'line',
+                        data: macdData.dea || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#5B8DEF', width: 1.5 },
                     }
+                );
+            }
+
+            if (currentIndicators.includes('KDJ') && indicatorsData.kdj) {
+                const kdjData = indicatorsData.kdj;
+                series.push(
+                    {
+                        name: 'K',
+                        type: 'line',
+                        data: kdjData.k || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1.5 },
+                    },
+                    {
+                        name: 'D',
+                        type: 'line',
+                        data: kdjData.d || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#63D3AE', width: 1.5 },
+                    },
+                    {
+                        name: 'J',
+                        type: 'line',
+                        data: kdjData.j || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#D280FF', width: 1.5 },
+                    }
+                );
+            }
+
+            if (currentIndicators.includes('RSI')) {
+                series.push(
+                    {
+                        name: 'RSI6',
+                        type: 'line',
+                        data: indicatorsData.rsi6 || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1.5 },
+                    },
+                    {
+                        name: 'RSI12',
+                        type: 'line',
+                        data: indicatorsData.rsi12 || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#5B8DEF', width: 1.5 },
+                    },
+                    {
+                        name: 'RSI24',
+                        type: 'line',
+                        data: indicatorsData.rsi24 || [],
+                        xAxisIndex: 1,
+                        yAxisIndex: 1,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#D280FF', width: 1.5 },
+                    }
+                );
+            }
+
+            return series;
+        }
+
+        function renderCharts() {
+            if (!chartsReady || !klineChart || !klineData || !indicatorsData || klineData.error || indicatorsData.error) {
+                return;
+            }
+
+            const hasSecondary = currentIndicators.some((item) => ['MACD', 'KDJ', 'RSI'].includes(item));
+            const grid = hasSecondary
+                ? [
+                    { left: 52, right: 20, top: 28, height: '60%' },
+                    { left: 52, right: 20, top: '76%', height: '14%' },
                 ]
-            };
-            
-            // 添加均线
-            if (currentIndicators.includes('MA')) {
-                const maSeries = [
-                    { name: 'MA5', data: indicatorsData.ma5, color: '#f00' },
-                    { name: 'MA10', data: indicatorsData.ma10, color: '#ff0' },
-                    { name: 'MA20', data: indicatorsData.ma20, color: '#0f0' },
-                    { name: 'MA60', data: indicatorsData.ma60, color: '#00f' }
+                : [
+                    { left: 52, right: 20, top: 28, bottom: 54 },
                 ];
-                maSeries.forEach(m => {
-                    klineOption.series.push({
-                        name: m.name, type: 'line', data: m.data,
-                        xAxisIndex: 0, yAxisIndex: 0,
-                        smooth: true, showSymbol: false,
-                        lineStyle: { color: m.color, width: 1 }
+
+            const xAxis = [
+                {
+                    type: 'category',
+                    data: klineData.dates || [],
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: '#2B3A5C' } },
+                    axisLabel: { color: '#8A9AB3' },
+                    splitLine: { show: false },
+                    min: 'dataMin',
+                    max: 'dataMax',
+                }
+            ];
+
+            const yAxis = [
+                {
+                    type: 'value',
+                    scale: true,
+                    axisLine: { show: false },
+                    axisLabel: { color: '#8A9AB3' },
+                    splitLine: { lineStyle: { color: 'rgba(43, 58, 92, 0.36)' } },
+                }
+            ];
+
+            if (hasSecondary) {
+                xAxis.push({
+                    type: 'category',
+                    gridIndex: 1,
+                    data: klineData.dates || [],
+                    boundaryGap: false,
+                    axisLine: { lineStyle: { color: '#2B3A5C' } },
+                    axisLabel: { color: '#5A6A85' },
+                    splitLine: { show: false },
+                    min: 'dataMin',
+                    max: 'dataMax',
+                });
+                yAxis.push({
+                    type: 'value',
+                    gridIndex: 1,
+                    scale: true,
+                    axisLine: { show: false },
+                    axisLabel: { color: '#5A6A85' },
+                    splitLine: { lineStyle: { color: 'rgba(43, 58, 92, 0.24)' } },
+                });
+            }
+
+            const series = [
+                {
+                    name: 'K线',
+                    type: 'candlestick',
+                    data: (klineData.close || []).map((_, i) => [
+                        klineData.open[i],
+                        klineData.close[i],
+                        klineData.low[i],
+                        klineData.high[i],
+                    ]),
+                    itemStyle: {
+                        color: '#E05D5D',
+                        color0: '#29B48C',
+                        borderColor: '#E05D5D',
+                        borderColor0: '#29B48C',
+                    }
+                }
+            ];
+
+            if (currentIndicators.includes('MA')) {
+                [
+                    { name: 'MA5', data: indicatorsData.ma5 || [], color: '#F7B955' },
+                    { name: 'MA10', data: indicatorsData.ma10 || [], color: '#5B8DEF' },
+                    { name: 'MA20', data: indicatorsData.ma20 || [], color: '#63D3AE' },
+                    { name: 'MA60', data: indicatorsData.ma60 || [], color: '#D280FF' },
+                ].forEach((item) => {
+                    series.push({
+                        name: item.name,
+                        type: 'line',
+                        data: item.data,
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: item.color, width: 1.5 },
                     });
                 });
             }
-            
-            // 添加BOLL
+
             if (currentIndicators.includes('BOLL')) {
-                klineOption.series.push(
-                    { name: 'BOLL上', type: 'line', data: indicatorsData.boll_upper, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { color: '#f0f', width: 1, type: 'dashed' } },
-                    { name: 'BOLL中', type: 'line', data: indicatorsData.boll_mid, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { color: '#f0f', width: 1 } },
-                    { name: 'BOLL下', type: 'line', data: indicatorsData.boll_lower, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, lineStyle: { color: '#f0f', width: 1, type: 'dashed' } }
+                series.push(
+                    {
+                        name: 'BOLL上',
+                        type: 'line',
+                        data: indicatorsData.boll_upper || [],
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1, type: 'dashed' },
+                    },
+                    {
+                        name: 'BOLL中',
+                        type: 'line',
+                        data: indicatorsData.boll_mid || [],
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1.2 },
+                    },
+                    {
+                        name: 'BOLL下',
+                        type: 'line',
+                        data: indicatorsData.boll_lower || [],
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: { color: '#F7B955', width: 1, type: 'dashed' },
+                    }
                 );
             }
-            
-            // MACD副图
-            if (currentIndicators.includes('MACD')) {
-                document.getElementById('macd-chart').style.display = 'block';
-                const macdData = indicatorsData.macd;
-                klineOption.series.push(
-                    { name: 'MACD', type: 'bar', data: macdData.bar.map(v => v > 0 ? v : 0), xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: '#ff4d4d' } },
-                    { name: 'MACD-', type: 'bar', data: macdData.bar.map(v => v < 0 ? v : 0), xAxisIndex: 1, yAxisIndex: 1, itemStyle: { color: '#26de81' } },
-                    { name: 'DIF', type: 'line', data: macdData.dif, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#ff0' } },
-                    { name: 'DEA', type: 'line', data: macdData.dea, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#0ff' } }
-                );
-            }
-            
-            // KDJ副图
-            if (currentIndicators.includes('KDJ')) {
-                document.getElementById('macd-chart').style.display = 'block';
-                const kdjData = indicatorsData.kdj;
-                klineOption.series.push(
-                    { name: 'K', type: 'line', data: kdjData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#ff0' } },
-                    { name: 'D', type: 'line', data: kdjData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#0f0' } },
-                    { name: 'J', type: 'line', data: kdjData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#f0f' } }
-                );
-            }
-            
-            // RSI副图
-            if (currentIndicators.includes('RSI')) {
-                document.getElementById('macd-chart').style.display = 'block';
-                klineOption.series.push(
-                    { name: 'RSI6', type: 'line', data: indicatorsData.rsi6, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#ff0' } },
-                    { name: 'RSI12', type: 'line', data: indicatorsData.rsi12, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#0ff' } },
-                    { name: 'RSI24', type: 'line', data: indicatorsData.rsi24, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, lineStyle: { color: '#f0f' } }
-                );
-            }
-            
-            klineChart.setOption(klineOption, true);
+
+            series.push(...buildSecondarySeries(hasSecondary));
+
+            const option = {
+                backgroundColor: 'transparent',
+                animationDuration: 300,
+                legend: {
+                    top: 0,
+                    textStyle: { color: '#8A9AB3', fontSize: 11 },
+                    itemWidth: 12,
+                    itemHeight: 8,
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross',
+                        lineStyle: { color: '#5A6A85', type: 'dashed' },
+                    },
+                    backgroundColor: 'rgba(11, 18, 32, 0.92)',
+                    borderColor: '#2B3A5C',
+                    textStyle: { color: '#E6ECF5' },
+                },
+                grid,
+                xAxis,
+                yAxis,
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        xAxisIndex: hasSecondary ? [0, 1] : [0],
+                        zoomOnMouseWheel: true,
+                        moveOnMouseMove: true,
+                    }
+                ],
+                series,
+            };
+
+            klineChart.setOption(option, true);
         }
-        
-        // 加载AI分析
-        async function loadAIAnalysis() {
-            try {
-                const res = await fetch(`/api/analyze/${currentStock}?period=${currentPeriod}`);
-                const data = await res.json();
-                
-                if (data.error) {
-                    document.getElementById('aiAnalysisBox').style.display = 'none';
-                    return;
-                }
-                
-                const ai = data.ai_analysis;
-                document.getElementById('aiScore').textContent = ai.score || '-';
-                document.getElementById('aiReason').textContent = ai.reason || '-';
-                
-                // 趋势
-                const shortTrend = document.getElementById('shortTrend');
-                shortTrend.textContent = ai.short_trend || '-';
-                shortTrend.className = 'trend-value ' + (ai.short_trend === '上涨' ? 'up' : ai.short_trend === '下跌' ? 'down' : 'neutral');
-                
-                const mediumTrend = document.getElementById('mediumTrend');
-                mediumTrend.textContent = ai.medium_trend || '-';
-                mediumTrend.className = 'trend-value ' + (ai.medium_trend === '上涨' ? 'up' : ai.medium_trend === '下跌' ? 'down' : 'neutral');
-                
-                // 建议标签
-                const adviceEl = document.getElementById('aiAdvice');
-                const adviceMap = {
-                    '强烈建议': 'strong-buy',
-                    '建议': 'buy',
-                    '观望': 'hold',
-                    '不建议': 'not-buy'
-                };
-                adviceEl.textContent = ai.advice || '观望';
-                adviceEl.className = 'ai-advice ' + (adviceMap[ai.advice] || 'hold');
-                
-                document.getElementById('aiAnalysisBox').style.display = 'block';
-            } catch (e) {
+
+        function scheduleAIAnalysisRender(bundle) {
+            const render = () => renderAIAnalysis(bundle);
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(render, { timeout: 300 });
+            } else {
+                window.setTimeout(render, 0);
+            }
+        }
+
+        function renderAIAnalysis(bundle) {
+            const ai = bundle && (bundle.analysis || bundle.ai_analysis);
+            if (!ai) {
                 document.getElementById('aiAnalysisBox').style.display = 'none';
-            }
-        }
-        
-        // 搜索建议
-        document.getElementById('stockCode').addEventListener('input', async (e) => {
-            const keyword = e.target.value.trim();
-            if (keyword.length < 3) {
-                document.getElementById('searchResults').classList.remove('show');
                 return;
             }
-            
-            try {
-                const res = await fetch(`/api/search?keyword=${keyword}`);
-                const data = await res.json();
-                
-                const resultsEl = document.getElementById('searchResults');
-                if (data.results && data.results.length > 0) {
-                    resultsEl.innerHTML = data.results.map(r => `
-                        <div class="search-result-item" onclick="selectStock('${r.code}', '${r.name}')">
-                            <div class="search-result-name">${r.name}</div>
-                            <div class="search-result-code">${r.code} ${r.change > 0 ? '+' : ''}${r.change.toFixed(2)}%</div>
-                        </div>
-                    `).join('');
-                    resultsEl.classList.add('show');
-                } else {
-                    resultsEl.classList.remove('show');
+
+            document.getElementById('aiScore').textContent = ai.score || '-';
+            document.getElementById('aiReason').textContent = ai.reason || '-';
+
+            const shortTrend = document.getElementById('shortTrend');
+            shortTrend.textContent = ai.short_trend || '-';
+            shortTrend.className = 'trend-value ' + (ai.short_trend === '上涨' ? 'up' : ai.short_trend === '下跌' ? 'down' : 'neutral');
+
+            const mediumTrend = document.getElementById('mediumTrend');
+            mediumTrend.textContent = ai.medium_trend || '-';
+            mediumTrend.className = 'trend-value ' + (ai.medium_trend === '上涨' ? 'up' : ai.medium_trend === '下跌' ? 'down' : 'neutral');
+
+            const adviceEl = document.getElementById('aiAdvice');
+            const adviceMap = {
+                '强烈建议': 'strong-buy',
+                '建议': 'buy',
+                '观望': 'hold',
+                '不建议': 'not-buy',
+            };
+            adviceEl.textContent = ai.advice || '观望';
+            adviceEl.className = 'ai-advice ' + (adviceMap[ai.advice] || 'hold');
+
+            document.getElementById('aiAnalysisBox').style.display = 'block';
+        }
+
+        function bindSearchSuggestions() {
+            const input = document.getElementById('stockCode');
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    searchStock();
                 }
-            } catch (e) {}
-        });
-        
-        function selectStock(code, name) {
-            document.getElementById('stockCode').value = code;
+            });
+
+            input.addEventListener('input', (event) => {
+                const keyword = event.target.value.trim();
+
+                if (searchTimer) {
+                    clearTimeout(searchTimer);
+                }
+
+                if (keyword.length < 2) {
+                    if (searchAbortController) {
+                        searchAbortController.abort();
+                        searchAbortController = null;
+                    }
+                    hideSearchResults();
+                    return;
+                }
+
+                searchTimer = setTimeout(async () => {
+                    if (searchAbortController) {
+                        searchAbortController.abort();
+                    }
+                    searchAbortController = new AbortController();
+                    try {
+                        const res = await fetch(`/api/search?q=${encodeURIComponent(keyword)}`, {
+                            signal: searchAbortController.signal,
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.results || data.results.length === 0) {
+                            hideSearchResults();
+                            return;
+                        }
+
+                        const resultsEl = document.getElementById('searchResults');
+                        resultsEl.innerHTML = data.results.map((item) => {
+                            const code = item.symbol || item.code || '';
+                            const change = Number(item.change || 0);
+                            const prefix = change > 0 ? '+' : '';
+                            return `
+                                <div class="search-result-item" data-code="${encodeURIComponent(code)}">
+                                    <div class="search-result-name">${item.name || code}</div>
+                                    <div class="search-result-code">${item.display_code || code} ${prefix}${change.toFixed(2)}%</div>
+                                </div>
+                            `;
+                        }).join('');
+
+                        resultsEl.querySelectorAll('.search-result-item').forEach((item) => {
+                            item.addEventListener('click', () => selectStock(decodeURIComponent(item.dataset.code)));
+                        });
+                        resultsEl.classList.add('show');
+                    } catch (e) {
+                        if (e.name !== 'AbortError') {
+                            console.warn('Stock search failed:', e);
+                            hideSearchResults();
+                        }
+                    } finally {
+                        searchAbortController = null;
+                    }
+                }, 180);
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!event.target.closest('.search-field')) {
+                    hideSearchResults();
+                }
+            });
+        }
+
+        function hideSearchResults() {
             document.getElementById('searchResults').classList.remove('show');
+        }
+
+        function selectStock(code) {
+            document.getElementById('stockCode').value = code;
             currentStock = code;
+            hideSearchResults();
             loadData();
         }
-        
+
         function showLoading(show) {
-            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            document.getElementById('loading').classList.toggle('is-visible', show);
         }
-        
+
         function showError(msg) {
             const el = document.getElementById('errorMsg');
             el.textContent = msg;
-            el.style.display = 'block';
+            el.classList.add('is-visible');
         }
-        
+
         function hideError() {
-            document.getElementById('errorMsg').style.display = 'none';
+            document.getElementById('errorMsg').classList.remove('is-visible');
         }
-        
-        // 初始化
+
+        function hideDataPanels() {
+            document.getElementById('stockInfo').style.display = 'none';
+            document.getElementById('aiAnalysisBox').style.display = 'none';
+        }
+
+        function readStoredJson(key) {
+            try {
+                const raw = window.localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeStoredJson(key, value) {
+            try {
+                window.localStorage.setItem(key, JSON.stringify(value));
+            } catch (_) {}
+        }
+
+        function persistStockContext(info) {
+            const code = info.display_code || info.code || info.symbol || currentStock;
+            writeStoredJson(STORAGE_KEYS.stock, {
+                code,
+                name: info.name || code,
+                period: currentPeriod,
+                updatedAt: Date.now(),
+            });
+        }
+
+        function buildScreenerBackUrl() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('from') !== 'screener') return '';
+            const targetType = params.get('back_target_type');
+            const targetId = params.get('back_target_id');
+            if (!targetType || !targetId) return '';
+            const next = new URLSearchParams();
+            next.set('target_type', targetType);
+            next.set('target_id', targetId);
+            const targetName = params.get('back_target_name');
+            if (targetName) next.set('target_name', targetName);
+            return `/screener?${next.toString()}`;
+        }
+
+        function renderWorkflowContext() {
+            const stock = readStoredJson(STORAGE_KEYS.stock);
+            const screener = readStoredJson(STORAGE_KEYS.screener);
+
+            const currentStockEl = document.getElementById('workflowCurrentStock');
+            const currentStockLink = document.getElementById('workflowCurrentStockLink');
+            if (stock && stock.code) {
+                currentStockEl.textContent = `当前股票：${stock.name || stock.code} · ${stock.code}`;
+                currentStockLink.href = `/?code=${encodeURIComponent(stock.code)}`;
+            } else {
+                currentStockEl.textContent = '当前股票：暂无记录';
+                currentStockLink.href = '/';
+            }
+
+            const screenerMetaEl = document.getElementById('workflowScreenerMeta');
+            const screenerLink = document.getElementById('workflowScreenerLink');
+            if (screener && screener.targetId && screener.targetType) {
+                const href = `/screener?target_type=${encodeURIComponent(screener.targetType)}&target_id=${encodeURIComponent(screener.targetId)}${screener.targetName ? `&target_name=${encodeURIComponent(screener.targetName)}` : ''}`;
+                screenerMetaEl.textContent = `最近筛选：${screener.targetName || '未命名目标'} · ${screener.targetType === 'group' ? '策略组' : '策略'}`;
+                screenerLink.href = href;
+            } else {
+                screenerMetaEl.textContent = '最近筛选：暂无记录';
+                screenerLink.href = '/screener';
+            }
+
+            const backLink = document.getElementById('workflowBackToScreener');
+            const backHref = buildScreenerBackUrl();
+            if (backHref) {
+                backLink.href = backHref;
+                backLink.style.display = '';
+            } else {
+                backLink.style.display = 'none';
+            }
+        }
+
+        function updateUrl() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('code', currentStock);
+            history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
-            // 检查URL参数
             const params = new URLSearchParams(window.location.search);
             const codeParam = params.get('code');
             if (codeParam) {
                 document.getElementById('stockCode').value = codeParam;
                 currentStock = codeParam;
             }
+
+            bindSearchSuggestions();
+            syncPeriodTabs();
+            syncIndicatorTabs();
+            updateQuotePeriod();
+            renderWorkflowContext();
             initCharts();
             loadData();
         });

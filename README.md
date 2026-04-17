@@ -64,8 +64,10 @@ pip install -r requirements.txt
 ## 当前保留的关键文件
 
 - [run.sh](/Users/zhongyi.zhang/project/python/stock-ai/run.sh)：本地启动入口
+- [deploy/deploy_remote.sh](/Users/zhongyi.zhang/project/python/stock-ai/deploy/deploy_remote.sh)：本地一键部署到远程服务器
 - [deploy/setup_server.sh](/Users/zhongyi.zhang/project/python/stock-ai/deploy/setup_server.sh)：服务器部署入口
 - [deploy/stock-ai.env.example](/Users/zhongyi.zhang/project/python/stock-ai/deploy/stock-ai.env.example)：部署环境变量示例
+- [deploy/remote.env.example](/Users/zhongyi.zhang/project/python/stock-ai/deploy/remote.env.example)：远程部署脚本配置示例
 - [USAGE.md](/Users/zhongyi.zhang/project/python/stock-ai/USAGE.md)：使用说明
 - [DEPLOY_TENCENT_CLOUD.md](/Users/zhongyi.zhang/project/python/stock-ai/DEPLOY_TENCENT_CLOUD.md)：腾讯云部署说明
 - [CLAUDE.md](/Users/zhongyi.zhang/project/python/stock-ai/CLAUDE.md)：给代码助手/维护者的说明

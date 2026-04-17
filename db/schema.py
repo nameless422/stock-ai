@@ -59,6 +59,8 @@ def init_db(db_target):
             matched_count INT,
             status VARCHAR(32),
             failure_summary TEXT,
+            miss_log_text LONGTEXT,
+            miss_log_payload LONGTEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             target_type VARCHAR(32),
             target_id BIGINT,
@@ -181,6 +183,8 @@ def init_db(db_target):
     ensure_column(c, "screening_runs", "target_logic", "VARCHAR(32)")
     ensure_column(c, "screening_runs", "run_token", "VARCHAR(64)")
     ensure_column(c, "screening_runs", "failure_summary", "TEXT")
+    ensure_column(c, "screening_runs", "miss_log_text", "LONGTEXT")
+    ensure_column(c, "screening_runs", "miss_log_payload", "LONGTEXT")
 
     create_mysql_index(c, "screening_runs", "idx_screening_runs_target", "target_type, target_id, created_at")
     create_mysql_index(c, "screening_runs", "idx_screening_runs_run_token", "run_token")

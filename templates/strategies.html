@@ -398,6 +398,35 @@
             </div>
         </header>
 
+        <section class="workflow-switcher" aria-label="跨页切换">
+            <div class="workflow-card is-active">
+                <div class="workflow-step">Step 1</div>
+                <div class="workflow-title">策略管理</div>
+                <div class="workflow-desc">在这里维护策略，然后带着最新规则去筛选页执行。</div>
+                <div class="workflow-actions">
+                    <a class="btn btn-primary btn-sm" href="/strategies">继续管理策略</a>
+                </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-step">Step 2</div>
+                <div class="workflow-title">筛选股票</div>
+                <div class="workflow-desc">保留最近一次筛选目标，调整策略后能快速回去继续看结果。</div>
+                <div class="workflow-meta" x-text="workspace.screener ? `最近筛选：${workspace.screener.targetName || '未命名目标'} · ${workspace.screener.targetType === 'group' ? '策略组' : '策略'}` : '最近筛选：暂无记录'"></div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" :href="lastScreenerUrl()">去最近筛选</a>
+                </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-step">Step 3</div>
+                <div class="workflow-title">股票详情</div>
+                <div class="workflow-desc">写策略时也可以快速回看最近股票的 K 线和技术指标。</div>
+                <div class="workflow-meta" x-text="workspace.stock ? `最近股票：${workspace.stock.name || workspace.stock.code} · ${workspace.stock.code}` : '最近股票：暂无记录'"></div>
+                <div class="workflow-actions">
+                    <a class="btn btn-ghost btn-sm" :href="lastStockUrl()">去最近股票</a>
+                </div>
+            </div>
+        </section>
+
         <!-- 三步引导 -->
         <section class="flow-guide" aria-label="使用流程">
             <div class="flow-step">
@@ -875,6 +904,14 @@
                 // ========== 分页 ==========
                 strategiesPage: 1,
                 groupsPage: 1,
+                storageKeys: {
+                    stock: 'stock_ai_last_stock',
+                    screener: 'stock_ai_last_screener',
+                },
+                workspace: {
+                    stock: null,
+                    screener: null,
+                },
 
                 // ========== 编辑器 ==========
                 editor: null,
@@ -901,8 +938,33 @@
 
                 // ========== 初始化 ==========
                 async init() {
+                    this.workspace.stock = this.readStoredJson(this.storageKeys.stock);
+                    this.workspace.screener = this.readStoredJson(this.storageKeys.screener);
                     await this.loadAll();
                     // 懒加载 contract（打开策略编辑器时再取）
+                },
+
+                readStoredJson(key) {
+                    try {
+                        const raw = window.localStorage.getItem(key);
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) {
+                        return null;
+                    }
+                },
+                lastScreenerUrl() {
+                    const screener = this.workspace.screener;
+                    if (!screener || !screener.targetId || !screener.targetType) return '/screener';
+                    const params = new URLSearchParams();
+                    params.set('target_type', screener.targetType);
+                    params.set('target_id', String(screener.targetId));
+                    if (screener.targetName) params.set('target_name', screener.targetName);
+                    return `/screener?${params.toString()}`;
+                },
+                lastStockUrl() {
+                    const stock = this.workspace.stock;
+                    if (!stock || !stock.code) return '/';
+                    return `/?code=${encodeURIComponent(stock.code)}`;
                 },
 
                 async loadAll() {
@@ -1051,10 +1113,12 @@
 
                 runOnScreener() {
                     if (!this.editor || !this.editor.saved) return;
-                    const { kind, id } = this.editor.saved;
+                    const { kind, id, name } = this.editor.saved;
                     const params = new URLSearchParams();
                     params.set('target_type', kind === 'group' ? 'group' : 'strategy');
                     params.set('target_id', String(id));
+                    params.set('guided', '1');
+                    if (name) params.set('target_name', name);
                     window.location.href = `/screener?${params.toString()}`;
                 },
 

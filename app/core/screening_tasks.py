@@ -1,6 +1,7 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import json
 import os
 
 import httpx
@@ -90,6 +91,81 @@ class ScreeningTaskHandler:
         except Exception:
             return ""
 
+    def _build_miss_log_entry(self, item: dict) -> dict:
+        payload = item.get("payload") or {}
+        return {
+            "code": item.get("code", ""),
+            "name": item.get("name", ""),
+            "reason": item.get("reason", ""),
+            "error": item.get("error", ""),
+            "daily": item.get("daily", ""),
+            "weekly": item.get("weekly", ""),
+            "score": item.get("score", 0),
+            "matched_strategies": item.get("matched_strategies", []),
+            "target": payload.get("target", {}),
+            "stock": payload.get("stock", {}),
+            "data_source": payload.get("data_source", {}),
+            "snapshots": payload.get("snapshots", {}),
+            "data_preview": payload.get("data_preview", {}),
+            "strategy_results": payload.get("strategy_results", []),
+        }
+
+    def _build_miss_log_text(
+        self,
+        *,
+        run_token: str,
+        run_date: str,
+        run_time: str,
+        total: int,
+        matched_count: int,
+        target_info: dict,
+        failure_summary: str,
+        miss_entries: list[dict],
+    ) -> str:
+        lines = [
+            "=== Stock AI 未命中排查日志 ===",
+            f"运行标识: {run_token}",
+            f"运行时间: {run_date} {run_time}",
+            f"目标类型: {target_info.get('target_type')}",
+            f"目标名称: {target_info.get('target_name')}",
+            f"目标逻辑: {target_info.get('target_logic')}",
+            f"扫描总数: {total}",
+            f"命中数量: {matched_count}",
+            f"未命中数量: {len(miss_entries)}",
+            f"未命中摘要: {failure_summary or '-'}",
+            "",
+            "=== 原始策略代码 ===",
+        ]
+        for strategy in target_info.get("strategies", []):
+            lines.extend(
+                [
+                    f"[策略] {strategy.get('name')} (id={strategy.get('id')})",
+                    str(strategy.get("description") or "-"),
+                    str(strategy.get("code") or "").rstrip(),
+                    "",
+                ]
+            )
+
+        lines.append("=== 未命中明细 ===")
+        for index, entry in enumerate(miss_entries, start=1):
+            lines.extend(
+                [
+                    f"--- 未命中 #{index} ---",
+                    f"股票: {entry.get('code')} {entry.get('name')}",
+                    f"原因: {entry.get('reason') or '-'}",
+                    f"错误: {entry.get('error') or '-'}",
+                    f"结果摘要: daily={entry.get('daily') or '-'} | weekly={entry.get('weekly') or '-'} | score={entry.get('score', 0)}",
+                    f"命中策略: {', '.join(entry.get('matched_strategies') or []) or '-'}",
+                    f"数据源: {json.dumps(entry.get('data_source') or {}, ensure_ascii=False)}",
+                    f"快照: {json.dumps(entry.get('snapshots') or {}, ensure_ascii=False)}",
+                    f"数据预览: {json.dumps(entry.get('data_preview') or {}, ensure_ascii=False)}",
+                    "策略结果:",
+                    json.dumps(entry.get("strategy_results") or [], ensure_ascii=False, indent=2),
+                    "",
+                ]
+            )
+        return "\n".join(lines).strip() + "\n"
+
     def __call__(self, task: dict, context) -> dict:
         payload = task.get("payload") or {}
         requested_target_type = payload.get("target_type")
@@ -140,6 +216,7 @@ class ScreeningTaskHandler:
             stock_filter = StrategyScreeningFilter(data_source, target_info)
             failure_reason_counts = Counter()
             miss_log_samples = []
+            miss_entries = []
             processed = 0
             save_counter = 0
             batch_size = min(self.submit_batch, total)
@@ -178,6 +255,7 @@ class ScreeningTaskHandler:
                             context.log(miss_log, level="warn")
                             if len(miss_log_samples) < 120:
                                 miss_log_samples.append(miss_log)
+                            miss_entries.append(self._build_miss_log_entry(item))
                             if item.get("error"):
                                 error_detail = str(item.get("traceback") or item.get("error") or reason).strip()
                                 context.log(f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{error_detail}", level="error")
@@ -227,6 +305,16 @@ class ScreeningTaskHandler:
                 failure_reason_counts=failure_reason_counts,
                 miss_log_samples=miss_log_samples,
             )
+            miss_log_text = self._build_miss_log_text(
+                run_token=run_token,
+                run_date=run_date,
+                run_time=run_time,
+                total=total,
+                matched_count=len(results),
+                target_info=target_info,
+                failure_summary=failure_summary,
+                miss_entries=miss_entries,
+            )
             self.run_saver(
                 run_token,
                 run_date,
@@ -237,6 +325,8 @@ class ScreeningTaskHandler:
                 results,
                 target_info=target_info,
                 failure_summary=failure_summary,
+                miss_log_text=miss_log_text,
+                miss_log_payload={"entries": miss_entries},
             )
 
             summary = f"扫描完成，命中 {len(results)} / {total}"

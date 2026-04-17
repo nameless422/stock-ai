@@ -13,4 +13,16 @@ if [ -z "${STOCK_AI_DB_URL:-}" ]; then
 fi
 
 echo "Starting stock-ai on http://127.0.0.1:8000"
-exec python3 main.py
+python3 worker_main.py &
+worker_pid=$!
+python3 main.py &
+web_pid=$!
+
+cleanup() {
+  kill "$web_pid" >/dev/null 2>&1 || true
+  kill "$worker_pid" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT INT TERM
+
+wait "$web_pid"
