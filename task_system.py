@@ -174,6 +174,29 @@ class TaskStore:
         self.append_log(task["id"], "info", "任务开始执行")
         return self.get_task(task["id"])
 
+    def recover_interrupted_tasks(self) -> int:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        rows = c.execute("SELECT id FROM task_jobs WHERE status = 'running'").fetchall()
+        now = _now_text()
+        c.execute(
+            """
+            UPDATE task_jobs
+            SET status = 'failed',
+                completed_at = ?,
+                error_text = COALESCE(error_text, '任务因服务重启中断，请重新发起'),
+                updated_at = ?
+            WHERE status = 'running'
+            """,
+            (now, now),
+        )
+        conn.commit()
+        conn.close()
+        for row in rows:
+            self.append_log(int(row["id"]), "error", "任务因服务重启中断，已标记为失败")
+        return len(rows)
+
     def update_task(
         self,
         task_id: int,
@@ -335,6 +358,9 @@ class TaskManager:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        recovered = self.store.recover_interrupted_tasks()
+        if recovered:
+            print(f"[任务系统] 已恢复 {recovered} 个因服务重启中断的任务")
         self._thread = threading.Thread(target=self._worker_loop, daemon=True)
         self._thread.start()
 
