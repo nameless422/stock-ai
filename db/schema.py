@@ -128,6 +128,21 @@ def init_db(db_target):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_kline_cache (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                stock_code VARCHAR(32) NOT NULL,
+                symbol VARCHAR(32) NOT NULL,
+                period VARCHAR(16) NOT NULL,
+                adjust_type VARCHAR(16) NOT NULL DEFAULT 'qfq',
+                bars_count INT NOT NULL DEFAULT 0,
+                payload LONGTEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_market_kline_cache (stock_code, period, adjust_type)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
     else:
         c.execute(
             """CREATE TABLE IF NOT EXISTS screening_results (
@@ -190,6 +205,19 @@ def init_db(db_target):
                 FOREIGN KEY (strategy_id) REFERENCES strategy_definitions(id)
             )"""
         )
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS market_kline_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                period TEXT NOT NULL,
+                adjust_type TEXT NOT NULL DEFAULT 'qfq',
+                bars_count INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(stock_code, period, adjust_type)
+            )"""
+        )
 
     ensure_column(c, db_target, "screening_results", "target_type", "VARCHAR(32)" if is_mysql(db_target) else "TEXT")
     ensure_column(c, db_target, "screening_results", "target_id", "BIGINT" if is_mysql(db_target) else "INTEGER")
@@ -201,15 +229,22 @@ def init_db(db_target):
     ensure_column(c, db_target, "screening_runs", "target_id", "BIGINT" if is_mysql(db_target) else "INTEGER")
     ensure_column(c, db_target, "screening_runs", "target_name", "VARCHAR(255)" if is_mysql(db_target) else "TEXT")
     ensure_column(c, db_target, "screening_runs", "target_logic", "VARCHAR(32)" if is_mysql(db_target) else "TEXT")
+    ensure_column(c, db_target, "market_kline_cache", "symbol", "VARCHAR(32)" if is_mysql(db_target) else "TEXT")
+    ensure_column(c, db_target, "market_kline_cache", "adjust_type", "VARCHAR(16) NOT NULL DEFAULT 'qfq'" if is_mysql(db_target) else "TEXT NOT NULL DEFAULT 'qfq'")
+    ensure_column(c, db_target, "market_kline_cache", "bars_count", "INT NOT NULL DEFAULT 0" if is_mysql(db_target) else "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(c, db_target, "market_kline_cache", "payload", "LONGTEXT NOT NULL" if is_mysql(db_target) else "TEXT NOT NULL")
+    ensure_column(c, db_target, "market_kline_cache", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP" if is_mysql(db_target) else "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 
     if is_mysql(db_target):
         create_mysql_index(c, "screening_runs", "idx_screening_runs_target", "target_type, target_id, created_at")
         create_mysql_index(c, "screening_results", "idx_screening_results_target", "target_type, target_id, run_date, run_time")
         create_mysql_index(c, "strategy_group_items", "idx_strategy_group_items_group", "group_id, sort_order")
+        create_mysql_index(c, "market_kline_cache", "idx_market_kline_cache_lookup", "stock_code, period, adjust_type")
     else:
         c.execute("CREATE INDEX IF NOT EXISTS idx_screening_runs_target ON screening_runs(target_type, target_id, created_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_screening_results_target ON screening_results(target_type, target_id, run_date, run_time)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_strategy_group_items_group ON strategy_group_items(group_id, sort_order)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_market_kline_cache_lookup ON market_kline_cache(stock_code, period, adjust_type)")
     c.execute("SELECT id FROM strategy_definitions WHERE name = ?", (DEFAULT_STRATEGY_NAME,))
     if not c.fetchone():
         c.execute(
