@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 import httpx
-from screening_core import StrategyScreeningFilter, SwitchingMarketDataSource, build_failure_summary
+from .screening_core import StrategyScreeningFilter, SwitchingMarketDataSource, build_failure_summary
 
 
 class ScreeningTaskHandler:

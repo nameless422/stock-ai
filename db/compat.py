@@ -1,11 +1,10 @@
-import sqlite3 as _sqlite3
 from collections.abc import Mapping
 from urllib.parse import parse_qs, urlparse
 
 import pymysql
 
 
-IntegrityError = (_sqlite3.IntegrityError, pymysql.err.IntegrityError)
+IntegrityError = pymysql.err.IntegrityError
 
 
 class Row(Mapping):
@@ -44,8 +43,7 @@ class MysqlCursorWrapper:
         return self
 
     def executemany(self, sql, seq_of_params):
-        sql = _rewrite_mysql_sql(sql)
-        self._cursor.executemany(sql, seq_of_params)
+        self._cursor.executemany(_rewrite_mysql_sql(sql), seq_of_params)
         return self
 
     def fetchone(self):
@@ -81,34 +79,30 @@ class MysqlConnectionWrapper:
         return getattr(self._conn, name)
 
 
-def connect(database_target):
-    if is_mysql_target(database_target):
-        parsed = urlparse(_normalize_mysql_url(database_target))
-        query = parse_qs(parsed.query)
-        conn = pymysql.connect(
-            host=parsed.hostname or "127.0.0.1",
-            port=parsed.port or 3306,
-            user=parsed.username or "root",
-            password=parsed.password or "",
-            database=(parsed.path or "/").lstrip("/"),
-            charset=query.get("charset", ["utf8mb4"])[0],
-            autocommit=False,
-        )
-        return MysqlConnectionWrapper(conn)
-    return _sqlite3.connect(database_target)
+def connect(database_url: str):
+    parsed = urlparse(_normalize_mysql_url(database_url))
+    if parsed.scheme != "mysql":
+        raise ValueError("Only MySQL is supported. Please set STOCK_AI_DB_URL=mysql://user:pass@host:3306/dbname?charset=utf8mb4")
+    query = parse_qs(parsed.query)
+    conn = pymysql.connect(
+        host=parsed.hostname or "127.0.0.1",
+        port=parsed.port or 3306,
+        user=parsed.username or "root",
+        password=parsed.password or "",
+        database=(parsed.path or "/").lstrip("/"),
+        charset=query.get("charset", ["utf8mb4"])[0],
+        autocommit=False,
+    )
+    return MysqlConnectionWrapper(conn)
 
 
-def is_mysql_target(database_target):
-    return str(database_target).startswith(("mysql://", "mysql+pymysql://"))
+def _normalize_mysql_url(database_url: str) -> str:
+    if str(database_url).startswith("mysql+pymysql://"):
+        return str(database_url).replace("mysql+pymysql://", "mysql://", 1)
+    return str(database_url)
 
 
-def _normalize_mysql_url(database_target):
-    if str(database_target).startswith("mysql+pymysql://"):
-        return str(database_target).replace("mysql+pymysql://", "mysql://", 1)
-    return str(database_target)
-
-
-def _rewrite_mysql_sql(sql):
+def _rewrite_mysql_sql(sql: str) -> str:
     sql = sql.replace("INSERT OR IGNORE", "INSERT IGNORE")
     return sql.replace("?", "%s")
 

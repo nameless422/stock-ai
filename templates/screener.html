@@ -2,647 +2,956 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>策略选股</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>策略选股 · Stock AI</title>
+    <link rel="stylesheet" href="/static/base.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #101826; color: #eef2ff; padding: 16px; }
-        .container { max-width: 1080px; margin: 0 auto; }
-        h1 { font-size: 28px; margin-bottom: 16px; color: #ff8a65; }
-        .sub { color: #8aa0bf; font-size: 14px; margin-bottom: 18px; line-height: 1.6; }
-        .card { background: linear-gradient(180deg, #182235, #11192a); border: 1px solid #263248; border-radius: 16px; padding: 18px; margin-bottom: 16px; }
-        .toolbar { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
-        .btn, select { border-radius: 10px; border: none; padding: 10px 14px; font-size: 14px; }
-        select { background: #0c1422; color: #eef2ff; border: 1px solid #2d3a52; }
-        .btn { background: #ff8a65; color: #fff; cursor: pointer; }
-        .btn.secondary { background: #20304a; color: #d4ddf0; }
-        .btn.green { background: #32c48d; color: #081b16; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .meta { display: flex; gap: 12px; flex-wrap: wrap; color: #9eb0cc; font-size: 13px; margin-top: 12px; }
-        .stat { background: #0c1422; border-radius: 12px; padding: 12px; min-width: 160px; }
-        .stat-label { color: #7f91ae; font-size: 12px; }
-        .stat-value { font-size: 24px; color: #fff; margin-top: 6px; }
-        .list { display: grid; gap: 10px; }
-        .item { background: #0d1626; border: 1px solid #202f47; border-radius: 14px; padding: 14px; }
-        .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .name { font-size: 18px; font-weight: 700; }
-        .code { color: #7f91ae; font-size: 12px; margin-left: 8px; }
-        .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #20304a; color: #9ed4ff; font-size: 12px; margin-right: 6px; margin-top: 8px; }
-        .reason { color: #b7c4dc; font-size: 13px; margin-top: 10px; line-height: 1.6; }
-        .empty { text-align: center; color: #7083a3; padding: 28px 12px; }
-        .history-item { cursor: pointer; transition: border-color 0.2s, transform 0.2s; }
-        .history-item:hover { border-color: #ff8a65; transform: translateY(-1px); }
-        .small { font-size: 12px; color: #8ea3c4; }
-        .section-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-        .section-title h2 { font-size: 18px; }
-        .status-live { color: #7ef0ba; font-weight: 600; }
-        .pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-        .pager-info { color: #8ea3c4; font-size: 12px; }
-        .pager-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .pager-btn { background: #20304a; color: #dbe6f9; border: none; border-radius: 8px; padding: 8px 12px; font-size: 12px; cursor: pointer; }
-        .pager-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-        .page-chip { background: #0c1422; border: 1px solid #2d3a52; color: #eef2ff; border-radius: 8px; padding: 8px 12px; font-size: 12px; min-width: 86px; text-align: center; }
-        a { color: #9ed4ff; text-decoration: none; }
+        /* ---------- 页面级样式（复用 base.css tokens） ---------- */
+        .hero {
+            margin-bottom: var(--sp-5);
+        }
+        .hero-title-row {
+            display: flex;
+            align-items: baseline;
+            gap: var(--sp-3);
+            flex-wrap: wrap;
+            margin-bottom: var(--sp-2);
+        }
+        .hero-desc {
+            color: var(--text-2);
+            font-size: 13px;
+            max-width: 680px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: var(--sp-3);
+            align-items: center;
+            color: var(--text-3);
+            font-size: 12px;
+        }
+        .nav-links a { color: var(--text-2); }
+        .nav-links a:hover { color: var(--text-1); }
+
+        .toolbar {
+            display: grid;
+            grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto auto;
+            gap: var(--sp-3);
+            align-items: center;
+        }
         @media (max-width: 720px) {
-            body { padding: 12px; }
-            h1 { font-size: 24px; }
-            .sub { font-size: 13px; }
-            .card { padding: 14px; border-radius: 14px; }
-            .toolbar { grid-template-columns: 1fr; }
-            .btn, select { width: 100%; min-height: 44px; }
-            .meta { gap: 10px; }
-            .stat { min-width: 0; flex: 1 1 calc(50% - 10px); }
-            .stat-value { font-size: 20px; }
-            .row { align-items: flex-start; }
-            .name { font-size: 16px; }
-            .pager { align-items: stretch; }
-            .pager-info { width: 100%; }
-            .pager-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .pager-btn, .page-chip { width: 100%; text-align: center; min-width: 0; }
+            .toolbar {
+                grid-template-columns: 1fr 1fr;
+            }
+            .toolbar > .btn { grid-column: span 1; }
         }
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            h1 { font-size: 22px; }
-            .card { padding: 12px; }
-            .meta { display: grid; grid-template-columns: 1fr; }
-            .stat { width: 100%; }
-            .pager-actions { grid-template-columns: 1fr 1fr; gap: 6px; }
-            .page-chip { grid-column: 1 / -1; order: -1; }
+
+        /* 状态卡 */
+        .status-card {
+            transition: border-color var(--t-med) var(--ease), background var(--t-med) var(--ease);
         }
+        .status-card.is-running {
+            border-color: rgba(91, 141, 239, 0.35);
+            background: linear-gradient(180deg, rgba(91, 141, 239, 0.05), var(--card));
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: var(--sp-4);
+            margin-top: var(--sp-3);
+        }
+        @media (max-width: 560px) {
+            .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .status-grid > :nth-child(3) { grid-column: span 2; }
+        }
+        .stat-tile {
+            padding: var(--sp-3) var(--sp-4);
+            background: var(--bg-elev);
+            border-radius: var(--r-md);
+            border: 1px solid var(--border);
+        }
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-1);
+            margin-top: 4px;
+            font-variant-numeric: tabular-nums;
+        }
+        .stat-sub {
+            font-size: 11px;
+            color: var(--text-2);
+            margin-top: 2px;
+        }
+        .status-progress-row {
+            margin-top: var(--sp-4);
+            display: flex;
+            align-items: center;
+            gap: var(--sp-3);
+        }
+        .status-progress-row .progress { flex: 1; }
+
+        /* 主栅格 */
+        .grid-main {
+            display: grid;
+            gap: var(--sp-4);
+        }
+        @media (min-width: 960px) {
+            .grid-main {
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                align-items: start;
+            }
+            .col-history {
+                position: sticky;
+                top: var(--sp-4);
+                max-height: calc(100vh - var(--sp-5) - var(--sp-4));
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            .col-history .card-body { flex: 1; overflow-y: auto; }
+        }
+
+        /* 结果卡 */
+        .result-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-3);
+        }
+        .result-item {
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            padding: var(--sp-4);
+            animation: fade-in-up var(--t-fast) var(--ease) both;
+            display: block;
+            text-decoration: none;
+            color: inherit;
+            cursor: pointer;
+            transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+        }
+        .result-item:hover {
+            border-color: var(--primary);
+            background: var(--card-hover);
+        }
+        .result-item:active { transform: scale(0.997); }
+        .result-item .result-link-hint {
+            font-size: 11px;
+            color: var(--text-3);
+            margin-left: var(--sp-2);
+            opacity: 0;
+            transition: opacity var(--t-fast) var(--ease);
+            white-space: nowrap;
+        }
+        .result-item:hover .result-link-hint {
+            opacity: 1;
+            color: var(--primary);
+        }
+        .result-item:nth-child(1) { animation-delay: 0ms; }
+        .result-item:nth-child(2) { animation-delay: 20ms; }
+        .result-item:nth-child(3) { animation-delay: 40ms; }
+        .result-item:nth-child(4) { animation-delay: 60ms; }
+        .result-item:nth-child(5) { animation-delay: 80ms; }
+        .result-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-3);
+        }
+        .result-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-1);
+            margin-right: var(--sp-2);
+        }
+        .result-code {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-3);
+        }
+        .result-strategies {
+            margin: var(--sp-2) 0;
+        }
+        .result-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: var(--sp-2);
+            margin-top: var(--sp-3);
+        }
+        .metric-tile {
+            padding: var(--sp-2) var(--sp-3);
+            background: var(--card);
+            border-radius: var(--r-sm);
+            border: 1px solid var(--border);
+        }
+        .metric-label {
+            font-size: 10px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .metric-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-1);
+            margin-top: 2px;
+            font-variant-numeric: tabular-nums;
+        }
+        .result-reason {
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.6;
+            margin-top: var(--sp-2);
+            padding: var(--sp-2) var(--sp-3);
+            background: var(--card);
+            border-radius: var(--r-sm);
+            border-left: 2px solid var(--primary);
+        }
+
+        /* 历史项 */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-2);
+        }
+        .history-item {
+            padding: var(--sp-3);
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            cursor: pointer;
+            transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+        }
+        .history-item:hover {
+            border-color: var(--primary);
+            background: var(--card-hover);
+        }
+        .history-item.is-active {
+            border-color: var(--primary);
+            background: var(--primary-dim);
+        }
+        .history-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+        }
+        .history-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+        }
+        .history-meta {
+            font-size: 11px;
+            color: var(--text-3);
+            font-variant-numeric: tabular-nums;
+            margin-top: 2px;
+        }
+
+        /* 失败摘要 */
+        .failure-summary {
+            margin-top: var(--sp-3);
+            padding: var(--sp-3);
+            background: rgba(247, 185, 85, 0.06);
+            border: 1px solid rgba(247, 185, 85, 0.2);
+            border-radius: var(--r-md);
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.6;
+        }
+        .failure-summary-label {
+            color: var(--accent);
+            font-weight: 600;
+            margin-right: 6px;
+        }
+
+        /* 抽屉内容 */
+        .drawer-meta {
+            display: flex;
+            gap: var(--sp-3);
+            align-items: center;
+            color: var(--text-2);
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* 移动端 segmented 容器 */
+        .view-mobile-seg {
+            display: flex;
+            width: 100%;
+        }
+        .view-mobile-seg .seg {
+            flex: 1;
+            display: flex;
+        }
+
+        /* 隐藏 alpine 还没初始化前的原始 DOM */
+        [x-cloak] { display: none !important; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>策略选股</h1>
-        <div class="sub">把筛选入口从单一固定规则升级成策略化执行。你可以按单个策略或策略组跑全市场扫描，并查看每次运行的命中结果与原因。</div>
+    <div class="page" x-data="screener()" x-init="init()" x-cloak>
 
-        <div class="card">
+        <!-- ========== 头部 ========== -->
+        <header class="hero">
+            <div class="hero-title-row">
+                <h1 class="title-xl">策略选股</h1>
+                <span x-show="status && status.running" class="badge badge-dot badge-live"
+                      style="background: rgba(91, 141, 239, 0.16); color: var(--primary);">
+                    扫描中
+                </span>
+            </div>
+            <div class="hero-desc">
+                按单个策略或策略组跑全市场扫描，查看每次运行的命中结果与原因。策略可在
+                <a href="/strategies">策略管理</a> 里维护。
+            </div>
+        </header>
+
+        <!-- ========== 工具栏 ========== -->
+        <div class="card card-compact stack" style="margin-bottom: var(--sp-4);">
             <div class="toolbar">
-                <select id="targetType" onchange="onTargetTypeChange()">
+                <select class="select" x-model="targetType" @change="onTargetTypeChange()">
                     <option value="strategy">按策略执行</option>
                     <option value="group">按策略组执行</option>
                 </select>
-                <select id="targetId"></select>
-                <button class="btn" id="runBtn" onclick="runScreener()">加入队列</button>
-                <a class="btn secondary" href="/strategies">管理策略</a>
+                <select class="select" x-model.number="targetId">
+                    <template x-if="currentTargetList().length === 0">
+                        <option value="">暂无可选</option>
+                    </template>
+                    <template x-for="item in currentTargetList()" :key="item.id">
+                        <option :value="item.id" x-text="item.name"></option>
+                    </template>
+                </select>
+                <button class="btn btn-primary" @click="runScreener()"
+                        :disabled="!canRun">
+                    <template x-if="isStarting || (status && status.running)">
+                        <span class="spinner spinner-on-primary"></span>
+                    </template>
+                    <span x-text="status && status.running ? '运行中' : '开始扫描'"></span>
+                </button>
+                <a class="btn btn-ghost md-only" href="/strategies">管理策略</a>
             </div>
-            <div class="meta">
-                <div class="stat">
-                    <div class="stat-label">当前目标</div>
-                    <div class="stat-value" id="currentTarget">-</div>
+        </div>
+
+        <!-- ========== 状态卡 ========== -->
+        <section class="card status-card" :class="{ 'is-running': status && status.running }"
+                 style="margin-bottom: var(--sp-4);">
+            <div class="row-between">
+                <div>
+                    <div class="title-md" x-text="status && status.target_name ? status.target_name : (currentTargetName() || '等待选择目标')"></div>
+                    <div class="text-2 text-small" style="margin-top: 4px;">
+                        <template x-if="status && status.running">
+                            <span style="color: var(--primary);">正在扫描全市场…</span>
+                        </template>
+                        <template x-if="status && !status.running && status.status === 'completed'">
+                            <span>最近一次运行已完成</span>
+                        </template>
+                        <template x-if="status && !status.running && status.status !== 'completed'">
+                            <span>当前没有运行中的任务</span>
+                        </template>
+                        <template x-if="!status">
+                            <span>加载中…</span>
+                        </template>
+                    </div>
                 </div>
-                <div class="stat">
-                    <div class="stat-label">最新命中</div>
-                    <div class="stat-value" id="matchedCount">0</div>
+                <div class="text-2 text-small" x-show="status && status.time">
+                    <span class="text-3">最近运行 · </span>
+                    <span x-text="status && status.time"></span>
                 </div>
-                <div class="stat">
+            </div>
+
+            <div class="status-grid">
+                <div class="stat-tile">
+                    <div class="stat-label">命中</div>
+                    <div class="stat-value" x-text="(status && status.matched_count) || 0"></div>
+                    <div class="stat-sub">只股票</div>
+                </div>
+                <div class="stat-tile">
                     <div class="stat-label">扫描进度</div>
-                    <div class="stat-value" id="progressValue">0 / 0</div>
+                    <div class="stat-value" x-text="`${(status && status.processed) || 0} / ${(status && status.total_stocks) || 0}`"></div>
+                    <div class="stat-sub" x-text="progressPercent + '%'"></div>
+                </div>
+                <div class="stat-tile">
+                    <div class="stat-label">目标类型</div>
+                    <div class="stat-value" style="font-size: 16px; padding-top: 2px;"
+                         x-text="targetType === 'group' ? '策略组' : '单策略'"></div>
+                    <div class="stat-sub" x-text="status && status.target_logic ? status.target_logic : '—'"></div>
                 </div>
             </div>
-            <div class="meta">
-                <span id="statusText">尚未开始运行</span>
-                <span id="lastRunText"></span>
-            </div>
-        </div>
 
-        <div class="card">
-            <div class="section-title">
-                <h2>任务队列</h2>
-                <span class="small">最近的策略扫描任务与执行进度</span>
-            </div>
-            <div id="taskList" class="list">
-                <div class="empty">加载中...</div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="section-title">
-                <h2>最新结果</h2>
-                <span class="small" id="resultMeta"></span>
-            </div>
-            <div class="pager" id="resultPager" style="display:none;">
-                <div class="pager-info" id="resultPagerInfo"></div>
-                <div class="pager-actions">
-                    <button class="pager-btn" id="resultFirstBtn" onclick="goToResultPage(1)">第一页</button>
-                    <button class="pager-btn" id="resultPrevBtn" onclick="goToResultPage(resultState.page - 1)">上一页</button>
-                    <span class="page-chip" id="resultPageChip">1 / 1</span>
-                    <button class="pager-btn" id="resultNextBtn" onclick="goToResultPage(resultState.page + 1)">下一页</button>
-                    <button class="pager-btn" id="resultLastBtn" onclick="goToResultPage(resultState.totalPages)">最后一页</button>
+            <div class="status-progress-row" x-show="status && (status.total_stocks > 0 || status.running)">
+                <div class="progress">
+                    <div class="progress-bar" :style="`width: ${progressPercent}%`"></div>
                 </div>
+                <div class="text-3 text-small" x-text="progressPercent + '%'"></div>
             </div>
-            <div id="resultList" class="list">
-                <div class="empty">暂无结果</div>
+
+            <div class="failure-summary" x-show="status && status.failure_summary">
+                <span class="failure-summary-label">未命中摘要</span>
+                <span x-text="status && status.failure_summary"></span>
+            </div>
+        </section>
+
+        <!-- ========== 移动端 segmented 视图切换 ========== -->
+        <div class="sm-only" style="margin-bottom: var(--sp-3);">
+            <div class="seg view-mobile-seg">
+                <button class="seg-btn" :class="{ active: view === 'results' }" @click="view = 'results'">
+                    结果 <span class="text-3" x-text="`· ${results ? results.length : 0}`"></span>
+                </button>
+                <button class="seg-btn" :class="{ active: view === 'history' }" @click="view = 'history'">
+                    历史 <span class="text-3" x-text="`· ${history ? history.length : 0}`"></span>
+                </button>
             </div>
         </div>
 
-        <div class="card">
-            <div class="section-title">
-                <h2>运行历史</h2>
-                <span class="small">点击某次运行查看详情</span>
-            </div>
-            <div class="pager" id="historyPager" style="display:none;">
-                <div class="pager-info" id="historyPagerInfo"></div>
-                <div class="pager-actions">
-                    <button class="pager-btn" id="historyFirstBtn" onclick="goToHistoryPage(1)">第一页</button>
-                    <button class="pager-btn" id="historyPrevBtn" onclick="goToHistoryPage(historyState.page - 1)">上一页</button>
-                    <span class="page-chip" id="historyPageChip">1 / 1</span>
-                    <button class="pager-btn" id="historyNextBtn" onclick="goToHistoryPage(historyState.page + 1)">下一页</button>
-                    <button class="pager-btn" id="historyLastBtn" onclick="goToHistoryPage(historyState.totalPages)">最后一页</button>
+        <!-- ========== 主内容 ========== -->
+        <div class="grid-main">
+
+            <!-- 结果列 -->
+            <section class="card" x-show="isDesktop || view === 'results'">
+                <div class="card-header">
+                    <div>
+                        <div class="title-lg">最新结果</div>
+                        <div class="text-2 text-small" x-show="results">
+                            共 <span x-text="results ? results.length : 0"></span> 条
+                            <span x-show="status && status.time" class="text-3"> · <span x-text="status && status.time"></span></span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div id="historyList" class="list">
-                <div class="empty">加载中...</div>
-            </div>
-        </div>
 
-        <div class="card">
-            <div class="section-title">
-                <h2>运行详情</h2>
-                <span class="small" id="detailMeta">请选择一条历史记录</span>
-            </div>
-            <div class="pager" id="detailPager" style="display:none;">
-                <div class="pager-info" id="detailPagerInfo"></div>
-                <div class="pager-actions">
-                    <button class="pager-btn" id="detailFirstBtn" onclick="goToDetailPage(1)">第一页</button>
-                    <button class="pager-btn" id="detailPrevBtn" onclick="goToDetailPage(detailState.page - 1)">上一页</button>
-                    <span class="page-chip" id="detailPageChip">1 / 1</span>
-                    <button class="pager-btn" id="detailNextBtn" onclick="goToDetailPage(detailState.page + 1)">下一页</button>
-                    <button class="pager-btn" id="detailLastBtn" onclick="goToDetailPage(detailState.totalPages)">最后一页</button>
+                <!-- 骨架 -->
+                <template x-if="results === null">
+                    <div>
+                        <div class="skeleton skeleton-row"></div>
+                        <div class="skeleton skeleton-row"></div>
+                        <div class="skeleton skeleton-row"></div>
+                    </div>
+                </template>
+
+                <!-- 空态 -->
+                <template x-if="results !== null && results.length === 0">
+                    <div class="empty">
+                        <div class="empty-icon">🔍</div>
+                        <div>当前没有命中结果</div>
+                        <div class="text-3">选择策略后点击"开始扫描"</div>
+                    </div>
+                </template>
+
+                <!-- 列表 -->
+                <div class="result-list" x-show="results && results.length > 0">
+                    <template x-for="item in paginatedResults" :key="item.code">
+                        <a class="result-item" :href="stockDetailUrl(item.code)" :title="`查看 ${item.name} 的 K 线`">
+                            <div class="result-head">
+                                <div>
+                                    <span class="result-name" x-text="item.name"></span>
+                                    <span class="result-code" x-text="item.code"></span>
+                                    <span class="result-link-hint">查看 K 线 →</span>
+                                </div>
+                                <span class="score-badge">
+                                    <span x-text="Number(item.score || 0).toFixed(1)"></span>
+                                    <span class="score-unit">分</span>
+                                </span>
+                            </div>
+                            <div class="result-strategies">
+                                <template x-if="(item.matched_strategies || []).length > 0">
+                                    <template x-for="name in item.matched_strategies" :key="name">
+                                        <span class="pill" x-text="name"></span>
+                                    </template>
+                                </template>
+                                <template x-if="!item.matched_strategies || item.matched_strategies.length === 0">
+                                    <span class="pill" style="opacity: 0.6;">未返回命中策略</span>
+                                </template>
+                            </div>
+                            <div class="result-reason" x-text="item.reason || item.weekly || '—'"></div>
+                            <div class="result-metrics">
+                                <div class="metric-tile">
+                                    <div class="metric-label">成交量</div>
+                                    <div class="metric-value" x-text="formatVol(item.current_vol)"></div>
+                                </div>
+                                <div class="metric-tile">
+                                    <div class="metric-label">DIF</div>
+                                    <div class="metric-value" x-text="Number(item.dif || 0).toFixed(2)"></div>
+                                </div>
+                                <div class="metric-tile">
+                                    <div class="metric-label">DEA</div>
+                                    <div class="metric-value" x-text="Number(item.dea || 0).toFixed(2)"></div>
+                                </div>
+                            </div>
+                        </a>
+                    </template>
                 </div>
-            </div>
-            <div id="detailList" class="list">
-                <div class="empty">暂无详情</div>
-            </div>
+
+                <!-- 分页 -->
+                <div class="pager" x-show="results && results.length > PAGE_SIZE">
+                    <div class="pager-info">共 <span x-text="results ? results.length : 0"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条</div>
+                    <div class="pager-actions">
+                        <button class="btn btn-ghost btn-sm" @click="resultsPage = 1" :disabled="resultsPage === 1">首页</button>
+                        <button class="btn btn-ghost btn-sm" @click="resultsPage--" :disabled="resultsPage === 1">上一页</button>
+                        <span class="pager-chip" x-text="`${resultsPage} / ${totalPages(results)}`"></span>
+                        <button class="btn btn-ghost btn-sm" @click="resultsPage++" :disabled="resultsPage >= totalPages(results)">下一页</button>
+                        <button class="btn btn-ghost btn-sm" @click="resultsPage = totalPages(results)" :disabled="resultsPage >= totalPages(results)">末页</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 历史列 -->
+            <aside class="card col-history" x-show="isDesktop || view === 'history'">
+                <div class="card-header">
+                    <div class="title-lg">运行历史</div>
+                    <div class="text-3 text-small">点击查看详情</div>
+                </div>
+                <div class="card-body">
+                    <template x-if="history === null">
+                        <div>
+                            <div class="skeleton skeleton-row" style="height: 60px;"></div>
+                            <div class="skeleton skeleton-row" style="height: 60px;"></div>
+                        </div>
+                    </template>
+
+                    <template x-if="history !== null && history.length === 0">
+                        <div class="empty">
+                            <div class="text-3">暂无历史记录</div>
+                        </div>
+                    </template>
+
+                    <div class="history-list" x-show="history && history.length > 0">
+                        <template x-for="item in paginatedHistory" :key="(item.run_token || '') + item.run_date + item.run_time">
+                            <div class="history-item"
+                                 :class="{ 'is-active': isActiveHistory(item) }"
+                                 @click="openDetail(item)">
+                                <div class="history-head">
+                                    <span class="history-name" x-text="item.target_name || '未命名目标'"></span>
+                                    <span class="badge badge-dim" x-text="`${item.matched_count || 0} / ${item.total_stocks || 0}`"></span>
+                                </div>
+                                <div class="history-meta">
+                                    <span x-text="item.run_date"></span>
+                                    <span x-text="' · ' + item.run_time"></span>
+                                    <span x-text="' · ' + (item.target_type === 'group' ? '策略组' : '策略')"></span>
+                                    <span x-show="item.target_logic" x-text="' · ' + item.target_logic"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="pager" x-show="history && history.length > PAGE_SIZE">
+                        <div class="pager-actions" style="width: 100%; justify-content: space-between;">
+                            <button class="btn btn-ghost btn-sm" @click="historyPage--" :disabled="historyPage === 1">上一页</button>
+                            <span class="pager-chip" x-text="`${historyPage} / ${totalPages(history)}`"></span>
+                            <button class="btn btn-ghost btn-sm" @click="historyPage++" :disabled="historyPage >= totalPages(history)">下一页</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
         </div>
 
-        <div class="sub" style="margin-top:18px;">
-            <a href="/">返回股票分析</a>
-            <span style="margin:0 8px;">|</span>
-            <a href="/vt">虚拟炒股</a>
-        </div>
+        <!-- 底部导航 -->
+        <footer class="nav-links" style="margin-top: var(--sp-5); justify-content: center;">
+            <a href="/">股票分析</a>
+            <span>·</span>
+            <a href="/strategies">策略管理</a>
+            <span>·</span>
+        </footer>
+
+        <!-- ========== 详情抽屉 ========== -->
+        <template x-if="detail">
+            <div>
+                <div class="drawer-backdrop"
+                     x-transition.opacity
+                     @click="closeDetail()"></div>
+                <aside class="drawer"
+                       x-transition:enter="drawer-enter"
+                       x-transition:enter-start="drawer-enter-start"
+                       x-transition:enter-end="drawer-enter-end"
+                       x-transition:leave="drawer-leave"
+                       x-transition:leave-start="drawer-leave-start"
+                       x-transition:leave-end="drawer-leave-end">
+                    <header class="drawer-header">
+                        <div>
+                            <div class="title-lg" x-text="detail.target_name || '运行详情'"></div>
+                            <div class="drawer-meta" style="margin-top: 4px;">
+                                <span x-text="detail.run_date"></span>
+                                <span x-text="detail.run_time"></span>
+                                <span class="badge badge-dim" x-text="`${detail.results ? detail.results.length : 0} 只命中`"></span>
+                            </div>
+                        </div>
+                        <button class="btn btn-ghost btn-icon" @click="closeDetail()" aria-label="关闭">✕</button>
+                    </header>
+                    <div class="drawer-body">
+                        <template x-if="detail.results === null">
+                            <div>
+                                <div class="skeleton skeleton-row"></div>
+                                <div class="skeleton skeleton-row"></div>
+                            </div>
+                        </template>
+                        <template x-if="detail.results !== null && detail.results.length === 0">
+                            <div class="empty">
+                                <div class="text-3">本次运行没有命中股票</div>
+                            </div>
+                        </template>
+                        <div class="result-list" x-show="detail.results && detail.results.length > 0">
+                            <template x-for="item in paginatedDetail" :key="item.stock_code">
+                                <a class="result-item" :href="stockDetailUrl(item.stock_code)" :title="`查看 ${item.stock_name} 的 K 线`">
+                                    <div class="result-head">
+                                        <div>
+                                            <span class="result-name" x-text="item.stock_name"></span>
+                                            <span class="result-code" x-text="item.stock_code"></span>
+                                            <span class="result-link-hint">查看 K 线 →</span>
+                                        </div>
+                                        <span class="score-badge">
+                                            <span x-text="Number(item.score || 0).toFixed(1)"></span>
+                                            <span class="score-unit">分</span>
+                                        </span>
+                                    </div>
+                                    <div class="result-strategies">
+                                        <template x-for="name in splitMatched(item.matched_strategies)" :key="name">
+                                            <span class="pill" x-text="name"></span>
+                                        </template>
+                                    </div>
+                                    <div class="result-reason" x-text="item.weekly_condition || '—'"></div>
+                                </a>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="drawer-footer" x-show="detail.results && detail.results.length > PAGE_SIZE">
+                        <div class="pager-actions" style="width: 100%; justify-content: space-between;">
+                            <button class="btn btn-ghost btn-sm" @click="detailPage--" :disabled="detailPage === 1">上一页</button>
+                            <span class="pager-chip" x-text="`${detailPage} / ${totalPages(detail.results)}`"></span>
+                            <button class="btn btn-ghost btn-sm" @click="detailPage++" :disabled="detailPage >= totalPages(detail.results)">下一页</button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </template>
+
     </div>
 
+    <style>
+        /* 抽屉进出动画（只在此页面使用） */
+        .drawer-enter { transition: transform var(--t-med) var(--ease); }
+        .drawer-enter-start { transform: translateX(100%); }
+        .drawer-enter-end { transform: translateX(0); }
+        .drawer-leave { transition: transform var(--t-fast) var(--ease); }
+        .drawer-leave-start { transform: translateX(0); }
+        .drawer-leave-end { transform: translateX(100%); }
+    </style>
+
     <script>
-        let targetOptions = { strategies: [], groups: [] };
-        let fastPollTimer = null;
-        let slowPollTimer = null;
-        let detailRequestKey = '';
-        let resultRenderToken = 0;
-        const RESULT_PAGE_SIZE = 10;
-        const HISTORY_PAGE_SIZE = 10;
-        const DETAIL_PAGE_SIZE = 10;
-        let resultState = {
-            items: [],
-            page: 1,
-            totalPages: 1,
-        };
-        let historyState = {
-            items: [],
-            page: 1,
-            totalPages: 1,
-        };
-        let detailState = {
-            items: [],
-            page: 1,
-            totalPages: 1,
-        };
-        let state = {
-            lastStatusKey: '',
-            lastResultKey: '',
-            lastHistoryKey: '',
-            lastTaskKey: '',
-            lastMatchedCount: -1,
-            lastRunning: false,
-            currentDetailKey: '',
-        };
+        function screener() {
+            return {
+                // ========== 常量 ==========
+                PAGE_SIZE: 10,
 
-        function qs() {
-            const targetType = document.getElementById('targetType').value;
-            const targetId = document.getElementById('targetId').value;
-            const params = new URLSearchParams();
-            if (targetType) params.set('target_type', targetType);
-            if (targetId) params.set('target_id', targetId);
-            return params.toString();
-        }
+                // ========== 静态 / 配置状态 ==========
+                targets: { strategies: [], groups: [] },
+                targetType: 'strategy',
+                targetId: null,
+                isDesktop: window.matchMedia('(min-width: 960px)').matches,
+                view: 'results',          // 仅移动端用：'results' | 'history'
+                isStarting: false,
 
-        function currentTargetName() {
-            const targetType = document.getElementById('targetType').value;
-            const targetId = Number(document.getElementById('targetId').value || 0);
-            const list = targetType === 'group' ? targetOptions.groups : targetOptions.strategies;
-            const found = list.find(item => Number(item.id) === targetId);
-            return found ? found.name : '-';
-        }
+                // ========== 数据状态（null 表示未加载，[] 表示空结果） ==========
+                status: null,
+                results: null,
+                resultsPage: 1,
+                history: null,
+                historyPage: 1,
+                detail: null,             // { run_date, run_time, target_type, target_id, target_name, run_token, results, total }
+                detailPage: 1,
 
-        function resultSignature(items) {
-            return (items || []).map(item => `${item.code}:${item.score}:${item.reason}:${(item.matched_strategies || []).join('|')}`).join('||');
-        }
+                // ========== 内部运行时 ==========
+                gen: 0,                   // 目标变更时自增，用于丢弃旧响应
+                timers: { status: null, results: null },
+                controllers: {},          // 每个 channel 的 AbortController
 
-        function historySignature(items) {
-            return (items || []).map(item => `${item.run_token || ''}:${item.run_date}:${item.run_time}:${item.target_type}:${item.target_id}:${item.matched_count}`).join('||');
-        }
+                // ========== 计算属性 ==========
+                get progressPercent() {
+                    const s = this.status;
+                    if (!s || !s.total_stocks) return 0;
+                    return Math.min(100, Math.round((s.processed || 0) / s.total_stocks * 100));
+                },
+                get canRun() {
+                    return !!this.targetId && !this.isStarting && !(this.status && this.status.running);
+                },
+                get paginatedResults() {
+                    if (!this.results) return [];
+                    const start = (this.resultsPage - 1) * this.PAGE_SIZE;
+                    return this.results.slice(start, start + this.PAGE_SIZE);
+                },
+                get paginatedHistory() {
+                    if (!this.history) return [];
+                    const start = (this.historyPage - 1) * this.PAGE_SIZE;
+                    return this.history.slice(start, start + this.PAGE_SIZE);
+                },
+                get paginatedDetail() {
+                    if (!this.detail || !this.detail.results) return [];
+                    const start = (this.detailPage - 1) * this.PAGE_SIZE;
+                    return this.detail.results.slice(start, start + this.PAGE_SIZE);
+                },
 
-        function taskSignature(items) {
-            return (items || []).map(item => `${item.id}:${item.status}:${item.progress_current}:${item.progress_total}:${item.result_text}:${item.error_text}`).join('||');
-        }
+                // ========== 初始化 ==========
+                async init() {
+                    // 响应式断点
+                    const mq = window.matchMedia('(min-width: 960px)');
+                    const syncMq = () => { this.isDesktop = mq.matches; };
+                    mq.addEventListener ? mq.addEventListener('change', syncMq) : mq.addListener(syncMq);
 
-        function updatePager(baseId, pageState, pageSize) {
-            const pager = document.getElementById(baseId + 'Pager');
-            const total = pageState.items.length;
-            pageState.totalPages = Math.max(1, Math.ceil(total / pageSize));
-            pageState.page = Math.min(Math.max(1, pageState.page), pageState.totalPages);
-            if (total <= pageSize) {
-                pager.style.display = 'none';
-                return;
-            }
-            pager.style.display = 'flex';
-            document.getElementById(baseId + 'PagerInfo').textContent = `共 ${total} 条， 每页 ${pageSize} 条`;
-            document.getElementById(baseId + 'PageChip').textContent = `${pageState.page} / ${pageState.totalPages}`;
-            document.getElementById(baseId + 'FirstBtn').disabled = pageState.page === 1;
-            document.getElementById(baseId + 'PrevBtn').disabled = pageState.page === 1;
-            document.getElementById(baseId + 'NextBtn').disabled = pageState.page === pageState.totalPages;
-            document.getElementById(baseId + 'LastBtn').disabled = pageState.page === pageState.totalPages;
-        }
+                    // 从 URL 预选目标（便于从策略页点"去选股页运行"跳过来）
+                    try {
+                        const qs = new URLSearchParams(window.location.search);
+                        const qType = qs.get('target_type');
+                        const qId = qs.get('target_id');
+                        if (qType === 'strategy' || qType === 'group') this.targetType = qType;
+                        if (qId) this.targetId = Number(qId);
+                    } catch (_) {}
 
-        function updateResultPager() {
-            updatePager('result', resultState, RESULT_PAGE_SIZE);
-        }
-
-        function goToResultPage(page) {
-            const nextPage = Math.min(Math.max(1, page), resultState.totalPages);
-            if (nextPage === resultState.page) {
-                return;
-            }
-            resultState.page = nextPage;
-            updateResultPager();
-            renderResultsPage();
-        }
-
-        function goToHistoryPage(page) {
-            const nextPage = Math.min(Math.max(1, page), historyState.totalPages);
-            if (nextPage === historyState.page) {
-                return;
-            }
-            historyState.page = nextPage;
-            updatePager('history', historyState, HISTORY_PAGE_SIZE);
-            renderHistoryPage();
-        }
-
-        function goToDetailPage(page) {
-            const nextPage = Math.min(Math.max(1, page), detailState.totalPages);
-            if (nextPage === detailState.page) {
-                return;
-            }
-            detailState.page = nextPage;
-            updatePager('detail', detailState, DETAIL_PAGE_SIZE);
-            renderDetailPage();
-        }
-
-        function resultCardTemplate(item) {
-            return `
-                <div class="item">
-                    <div class="row">
-                        <div>
-                            <span class="name">${item.name}</span>
-                            <span class="code">${item.code}</span>
-                        </div>
-                        <div class="small">评分 ${Number(item.score || 0).toFixed(1)}</div>
-                    </div>
-                    <div>${(item.matched_strategies || []).map(name => `<span class="pill">${name}</span>`).join('') || '<span class="pill">未返回命中策略</span>'}</div>
-                    <div class="reason">${item.reason || item.weekly || '-'}</div>
-                    <div class="small" style="margin-top:10px;">成交量 ${formatVol(item.current_vol)} | DIF ${Number(item.dif || 0).toFixed(2)} | DEA ${Number(item.dea || 0).toFixed(2)}</div>
-                </div>
-            `;
-        }
-
-        function renderResultsPage() {
-            const el = document.getElementById('resultList');
-            resultRenderToken += 1;
-            const currentToken = resultRenderToken;
-            const items = resultState.items || [];
-            if (!items || items.length === 0) {
-                el.innerHTML = '<div class="empty">暂无命中结果</div>';
-                return;
-            }
-            const startIndex = (resultState.page - 1) * RESULT_PAGE_SIZE;
-            const pageItems = items.slice(startIndex, startIndex + RESULT_PAGE_SIZE);
-            const firstChunkSize = 20;
-            const chunkSize = 40;
-            el.innerHTML = pageItems.slice(0, firstChunkSize).map(resultCardTemplate).join('');
-            if (pageItems.length <= firstChunkSize) {
-                return;
-            }
-
-            let cursor = firstChunkSize;
-            const appendChunk = () => {
-                if (currentToken !== resultRenderToken) {
-                    return;
-                }
-                const nextSlice = pageItems.slice(cursor, cursor + chunkSize);
-                if (nextSlice.length === 0) {
-                    return;
-                }
-                el.insertAdjacentHTML('beforeend', nextSlice.map(resultCardTemplate).join(''));
-                cursor += chunkSize;
-                if (cursor < pageItems.length) {
-                    if (window.requestIdleCallback) {
-                        window.requestIdleCallback(appendChunk, { timeout: 120 });
-                    } else {
-                        window.setTimeout(appendChunk, 16);
+                    // 先加载目标、首轮数据，再开启 watch（避免 syncTargetSelection 触发双重刷新）
+                    await this.loadTargets();
+                    if (this.targetId) {
+                        await this.refreshAll('init');
                     }
-                }
+                    this.$watch('targetId', () => this.onTargetChange());
+                    this.startPolling();
+
+                    // 页面销毁时清理
+                    window.addEventListener('beforeunload', () => this.stopPolling());
+                },
+
+                // ========== 目标管理 ==========
+                currentTargetList() {
+                    if (this.targetType === 'group') return this.targets.groups || [];
+                    return (this.targets.strategies || []).filter(s => s.enabled !== 0);
+                },
+                currentTargetName() {
+                    const list = this.currentTargetList();
+                    const found = list.find(x => Number(x.id) === Number(this.targetId));
+                    return found ? found.name : '';
+                },
+                async loadTargets() {
+                    try {
+                        const res = await fetch('/api/screener/targets');
+                        this.targets = await res.json();
+                        this.syncTargetSelection();
+                    } catch (e) {
+                        console.error('加载目标失败', e);
+                    }
+                },
+                syncTargetSelection() {
+                    const list = this.currentTargetList();
+                    if (list.length === 0) { this.targetId = null; return; }
+                    const exists = list.some(x => Number(x.id) === Number(this.targetId));
+                    if (!exists) this.targetId = list[0].id;
+                },
+                onTargetTypeChange() {
+                    this.syncTargetSelection();
+                },
+
+                // ========== 状态切换：重置 + 取消 + 重新拉 ==========
+                onTargetChange() {
+                    this.gen++;
+                    this.cancelInflight();
+                    this.results = null;
+                    this.history = null;
+                    this.resultsPage = 1;
+                    this.historyPage = 1;
+                    this.detail = null;
+                    this.refreshAll('target-change');
+                },
+
+                cancelInflight() {
+                    Object.values(this.controllers).forEach(c => { try { c && c.abort(); } catch (_) {} });
+                    this.controllers = {};
+                },
+
+                async fetchJson(channel, url) {
+                    const myGen = this.gen;
+                    try {
+                        if (this.controllers[channel]) {
+                            try { this.controllers[channel].abort(); } catch (_) {}
+                        }
+                        const ctrl = new AbortController();
+                        this.controllers[channel] = ctrl;
+                        const res = await fetch(url, { signal: ctrl.signal });
+                        if (myGen !== this.gen) return null;   // 目标已变，丢弃
+                        if (!res.ok) return null;
+                        return await res.json();
+                    } catch (e) {
+                        if (e.name === 'AbortError') return null;
+                        console.warn(`[${channel}] fetch failed`, e);
+                        return null;
+                    } finally {
+                        if (this.controllers[channel] && this.controllers[channel].signal.aborted) {
+                            delete this.controllers[channel];
+                        }
+                    }
+                },
+
+                buildQuery() {
+                    const p = new URLSearchParams();
+                    if (this.targetType) p.set('target_type', this.targetType);
+                    if (this.targetId) p.set('target_id', this.targetId);
+                    return p.toString();
+                },
+
+                // ========== 主拉取 ==========
+                async refreshAll(reason) {
+                    if (!this.targetId) return;
+                    await Promise.all([
+                        this.loadStatus(),
+                        this.loadResults(),
+                        this.loadHistory(),
+                    ]);
+                },
+
+                async loadStatus() {
+                    if (!this.targetId) return;
+                    const data = await this.fetchJson('status', '/api/screener/status?' + this.buildQuery());
+                    if (data) this.status = data;
+                },
+
+                async loadResults() {
+                    if (!this.targetId) return;
+                    const data = await this.fetchJson('results', '/api/screener/results?' + this.buildQuery());
+                    if (!data) return;
+                    const items = data.results || [];
+                    // 列表长度变化或当前页无内容时回到首页；否则保留页码
+                    const prevLen = (this.results || []).length;
+                    this.results = items;
+                    const totalPages = this.totalPages(items);
+                    if (this.resultsPage > totalPages) this.resultsPage = Math.max(1, totalPages);
+                    if (prevLen === 0 && items.length > 0) this.resultsPage = 1;
+                },
+
+                async loadHistory() {
+                    if (!this.targetId) return;
+                    const data = await this.fetchJson('history', '/api/screener/history?' + this.buildQuery());
+                    if (!data) return;
+                    this.history = data.history || [];
+                    const totalPages = this.totalPages(this.history);
+                    if (this.historyPage > totalPages) this.historyPage = Math.max(1, totalPages);
+                },
+
+                // ========== 运行 ==========
+                async runScreener() {
+                    if (!this.canRun) return;
+                    this.isStarting = true;
+                    try {
+                        const res = await fetch('/api/screener/run?' + this.buildQuery());
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.message || data.error || '启动失败');
+                            return;
+                        }
+                        await this.loadStatus();
+                    } finally {
+                        this.isStarting = false;
+                    }
+                },
+
+                // ========== 轮询 ==========
+                startPolling() {
+                    this.scheduleStatus();
+                    this.scheduleResults();
+                },
+
+                stopPolling() {
+                    if (this.timers.status) clearTimeout(this.timers.status);
+                    if (this.timers.results) clearTimeout(this.timers.results);
+                    this.timers.status = this.timers.results = null;
+                    this.cancelInflight();
+                },
+
+                scheduleStatus() {
+                    if (this.timers.status) clearTimeout(this.timers.status);
+                    this.timers.status = setTimeout(async () => {
+                        await this.loadStatus();
+                        this.scheduleStatus();
+                    }, 1000);
+                },
+
+                scheduleResults() {
+                    if (this.timers.results) clearTimeout(this.timers.results);
+                    const interval = (this.status && this.status.running) ? 2000 : 5000;
+                    this.timers.results = setTimeout(async () => {
+                        const wasRunning = !!(this.status && this.status.running);
+                        await this.loadResults();
+                        if (!wasRunning) {
+                            // 完成后也再刷一次历史，确保新运行进入列表
+                            await this.loadHistory();
+                        }
+                        this.scheduleResults();
+                    }, interval);
+                },
+
+                // ========== 详情 ==========
+                async openDetail(item) {
+                    const key = `${item.run_token || ''}|${item.run_date}|${item.run_time}`;
+                    this.detail = {
+                        run_date: item.run_date,
+                        run_time: item.run_time,
+                        target_type: item.target_type,
+                        target_id: item.target_id,
+                        target_name: item.target_name,
+                        run_token: item.run_token,
+                        _key: key,
+                        results: null,
+                    };
+                    this.detailPage = 1;
+
+                    const params = new URLSearchParams();
+                    if (item.target_type) params.set('target_type', item.target_type);
+                    if (item.target_id) params.set('target_id', item.target_id);
+                    if (item.run_token) params.set('run_token', item.run_token);
+
+                    const url = `/api/screener/history/${encodeURIComponent(item.run_date)}/${encodeURIComponent(item.run_time)}?${params.toString()}`;
+                    const data = await this.fetchJson('detail', url);
+                    if (!data) return;
+                    // 若用户已切到另一条详情，就丢弃
+                    if (!this.detail || this.detail._key !== key) return;
+                    this.detail.results = data.results || [];
+                },
+
+                closeDetail() {
+                    this.detail = null;
+                    this.detailPage = 1;
+                },
+
+                isActiveHistory(item) {
+                    if (!this.detail) return false;
+                    const k = `${item.run_token || ''}|${item.run_date}|${item.run_time}`;
+                    return this.detail._key === k;
+                },
+
+                // ========== 工具函数 ==========
+                totalPages(list) {
+                    if (!list || list.length === 0) return 1;
+                    return Math.max(1, Math.ceil(list.length / this.PAGE_SIZE));
+                },
+                formatVol(v) {
+                    const n = Number(v || 0);
+                    if (!n) return '—';
+                    if (n >= 1e8) return (n / 1e8).toFixed(2) + '亿';
+                    if (n >= 1e4) return (n / 1e4).toFixed(2) + '万';
+                    return n.toFixed(0);
+                },
+                splitMatched(raw) {
+                    if (!raw) return [];
+                    if (Array.isArray(raw)) return raw;
+                    return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+                },
+                stockDetailUrl(code) {
+                    if (!code) return '#';
+                    return `/?code=${encodeURIComponent(code)}`;
+                },
             };
-
-            if (window.requestIdleCallback) {
-                window.requestIdleCallback(appendChunk, { timeout: 120 });
-            } else {
-                window.setTimeout(appendChunk, 16);
-            }
         }
-
-        function renderResults(items, preservePage = true) {
-            const previousFirstCode = (resultState.items[(resultState.page - 1) * RESULT_PAGE_SIZE] || {}).code;
-            resultState.items = items || [];
-            if (!preservePage) {
-                resultState.page = 1;
-            } else if (previousFirstCode) {
-                const newIndex = resultState.items.findIndex(item => item.code === previousFirstCode);
-                if (newIndex >= 0) {
-                    resultState.page = Math.floor(newIndex / RESULT_PAGE_SIZE) + 1;
-                }
-            }
-            updateResultPager();
-            renderResultsPage();
-        }
-
-        function renderHistoryPage() {
-            const el = document.getElementById('historyList');
-            const items = historyState.items || [];
-            if (!items || items.length === 0) {
-                el.innerHTML = '<div class="empty">暂无历史记录</div>';
-                return;
-            }
-            const startIndex = (historyState.page - 1) * HISTORY_PAGE_SIZE;
-            const pageItems = items.slice(startIndex, startIndex + HISTORY_PAGE_SIZE);
-            el.innerHTML = pageItems.map(item => `
-                <div class="item history-item" onclick="loadDetail('${item.run_date}', '${item.run_time}', '${item.target_type || ''}', '${item.target_id || ''}', '${item.run_token || ''}')">
-                    <div class="row">
-                        <div>
-                            <div class="name" style="font-size:16px;">${item.target_name || '未命名目标'}</div>
-                            <div class="small">${item.run_date} ${item.run_time} | ${item.target_type === 'group' ? '策略组' : '策略'} | ${item.target_logic || '-'}</div>
-                            <div class="small">${item.failure_summary || ''}</div>
-                        </div>
-                        <div class="small">命中 ${item.matched_count || 0} / ${item.total_stocks || 0}</div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function renderHistory(items, preservePage = true) {
-            if (!preservePage) {
-                historyState.page = 1;
-            }
-            historyState.items = items || [];
-            updatePager('history', historyState, HISTORY_PAGE_SIZE);
-            renderHistoryPage();
-        }
-
-        function renderTasks(items) {
-            const el = document.getElementById('taskList');
-            if (!items || items.length === 0) {
-                el.innerHTML = '<div class="empty">暂无任务</div>';
-                return;
-            }
-            el.innerHTML = items.map(item => {
-                const summary = item.progress_message || item.result_text || item.error_text || '-';
-                const progress = item.progress_total ? `${item.progress_current || 0} / ${item.progress_total}` : '-';
-                const matched = item.matched_count || 0;
-                const timeText = item.completed_at || item.started_at || item.created_at || '-';
-                return `
-                    <div class="item">
-                        <div class="row">
-                            <div>
-                                <div class="name" style="font-size:16px;">${item.target_name || '未命名目标'}</div>
-                                <div class="small">任务 #${item.id} | ${item.status || '-'} | ${timeText}</div>
-                            </div>
-                            <div class="small">命中 ${matched}</div>
-                        </div>
-                        <div>
-                            <span class="pill">${item.task_type || 'screening'}</span>
-                            <span class="pill">进度 ${progress}</span>
-                            <span class="pill">${item.target_type === 'group' ? '策略组' : '策略'}</span>
-                        </div>
-                        <div class="reason">${summary}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderDetailPage() {
-            const el = document.getElementById('detailList');
-            const items = detailState.items || [];
-            if (!items || items.length === 0) {
-                el.innerHTML = '<div class="empty">本次运行没有命中股票</div>';
-                return;
-            }
-            const startIndex = (detailState.page - 1) * DETAIL_PAGE_SIZE;
-            const pageItems = items.slice(startIndex, startIndex + DETAIL_PAGE_SIZE);
-            el.innerHTML = pageItems.map(item => `
-                <div class="item">
-                    <div class="row">
-                        <div>
-                            <span class="name">${item.stock_name}</span>
-                            <span class="code">${item.stock_code}</span>
-                        </div>
-                        <div class="small">评分 ${Number(item.score || 0).toFixed(1)}</div>
-                    </div>
-                    <div>${String(item.matched_strategies || '').split(',').filter(Boolean).map(name => `<span class="pill">${name.trim()}</span>`).join('')}</div>
-                    <div class="reason">${item.weekly_condition || '-'}</div>
-                </div>
-            `).join('');
-        }
-
-        function renderDetail(items, preservePage = false) {
-            if (!preservePage) {
-                detailState.page = 1;
-            }
-            detailState.items = items || [];
-            updatePager('detail', detailState, DETAIL_PAGE_SIZE);
-            renderDetailPage();
-        }
-
-        function formatVol(v) {
-            const value = Number(v || 0);
-            if (!value) return '-';
-            if (value >= 100000000) return (value / 100000000).toFixed(2) + '亿';
-            if (value >= 10000) return (value / 10000).toFixed(2) + '万';
-            return value.toFixed(0);
-        }
-
-        async function loadTargets() {
-            const res = await fetch('/api/screener/targets');
-            targetOptions = await res.json();
-            onTargetTypeChange();
-        }
-
-        function onTargetTypeChange() {
-            const type = document.getElementById('targetType').value;
-            const select = document.getElementById('targetId');
-            const items = type === 'group' ? targetOptions.groups : targetOptions.strategies.filter(item => item.enabled !== 0);
-            select.innerHTML = items.map(item => `<option value="${item.id}">${item.name}</option>`).join('');
-            document.getElementById('currentTarget').textContent = currentTargetName();
-            refreshAll();
-        }
-
-        async function loadStatus() {
-            const res = await fetch('/api/screener/status?' + qs());
-            const data = await res.json();
-            const statusKey = [
-                data.running ? '1' : '0',
-                data.time || '',
-                data.processed || 0,
-                data.total_stocks || 0,
-                data.matched_count || 0,
-                data.target_type || '',
-                data.target_id || '',
-            ].join('|');
-            if (statusKey === state.lastStatusKey) {
-                return data;
-            }
-            state.lastStatusKey = statusKey;
-            document.getElementById('currentTarget').textContent = data.target_name || currentTargetName();
-            document.getElementById('matchedCount').textContent = data.matched_count || 0;
-            document.getElementById('progressValue').textContent = `${data.processed || 0} / ${data.total_stocks || 0}`;
-            document.getElementById('statusText').innerHTML = data.queued
-                ? `任务排队中${data.progress_message ? ' · ' + data.progress_message : ''}`
-                : data.running
-                    ? `<span class="status-live">正在扫描全市场...</span>${data.progress_message ? ' · ' + data.progress_message : ''}`
-                    : (data.status === 'completed' ? `最近一次运行已完成${data.progress_message ? ' · ' + data.progress_message : ''}` : (data.status === 'failed' ? `最近任务失败 · ${data.error || data.progress_message || '-'}` : '当前没有运行中的任务'));
-            document.getElementById('lastRunText').textContent = data.time ? `最近运行：${data.time}` : '';
-            document.getElementById('runBtn').disabled = false;
-            if (data.running && (!state.lastRunning || data.matched_count !== state.lastMatchedCount)) {
-                loadResults(true);
-            }
-            if (!data.running && state.lastRunning) {
-                loadResults(true);
-                loadHistory(true);
-                loadTasks(true);
-            }
-            state.lastMatchedCount = data.matched_count || 0;
-            state.lastRunning = !!data.running;
-            return data;
-        }
-
-        async function loadResults(force = false) {
-            const res = await fetch('/api/screener/results?' + qs());
-            const data = await res.json();
-            const signature = `${data.time || ''}#${resultSignature(data.results)}`;
-            if (!force && signature === state.lastResultKey) {
-                return;
-            }
-            state.lastResultKey = signature;
-            const summary = data.failure_summary ? ` | 未命中原因: ${data.failure_summary}` : '';
-            document.getElementById('resultMeta').textContent = data.time ? `${data.target_name || '-'} | ${data.time} | ${data.total} 只${summary}` : '';
-            renderResults(data.results || [], !force);
-        }
-
-        async function loadHistory(force = false) {
-            const res = await fetch('/api/screener/history?' + qs());
-            const data = await res.json();
-            const signature = historySignature(data.history);
-            if (!force && signature === state.lastHistoryKey) {
-                return;
-            }
-            state.lastHistoryKey = signature;
-            renderHistory(data.history || [], !force);
-        }
-
-        async function loadTasks(force = false) {
-            const res = await fetch('/api/tasks?task_type=screening&limit=12&' + qs());
-            const data = await res.json();
-            const signature = taskSignature(data.tasks || []);
-            if (!force && signature === state.lastTaskKey) {
-                return;
-            }
-            state.lastTaskKey = signature;
-            renderTasks(data.tasks || []);
-        }
-
-        async function loadDetail(runDate, runTime, targetType, targetId, runToken = '') {
-            const params = new URLSearchParams();
-            if (targetType) params.set('target_type', targetType);
-            if (targetId) params.set('target_id', targetId);
-            if (runToken) params.set('run_token', runToken);
-            detailRequestKey = `${runToken}|${runDate}|${runTime}|${targetType}|${targetId}`;
-            state.currentDetailKey = detailRequestKey;
-            const res = await fetch(`/api/screener/history/${runDate}/${encodeURIComponent(runTime)}?` + params.toString());
-            const data = await res.json();
-            if (state.currentDetailKey !== detailRequestKey) {
-                return;
-            }
-            document.getElementById('detailMeta').textContent = `${runDate} ${runTime} | 共 ${data.total || 0} 只`;
-            renderDetail(data.results || [], false);
-        }
-
-        async function runScreener() {
-            const res = await fetch('/api/screener/run?' + qs());
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.message || data.error || '启动失败');
-                return;
-            }
-            startPolling();
-            await loadTasks(true);
-            await loadStatus();
-        }
-
-        async function refreshAll() {
-            await loadStatus();
-            await loadTasks(true);
-            await loadResults(true);
-            await loadHistory(true);
-        }
-
-        function stopPolling() {
-            if (fastPollTimer) clearInterval(fastPollTimer);
-            if (slowPollTimer) clearInterval(slowPollTimer);
-            fastPollTimer = null;
-            slowPollTimer = null;
-        }
-
-        function startPolling() {
-            stopPolling();
-            fastPollTimer = setInterval(() => {
-                loadStatus();
-            }, 1000);
-            slowPollTimer = setInterval(async () => {
-                if (state.lastRunning) {
-                    await loadTasks();
-                    await loadResults();
-                } else {
-                    await loadTasks();
-                    await loadResults();
-                    await loadHistory();
-                }
-            }, 5000);
-        }
-
-        document.getElementById('targetId').addEventListener('change', () => {
-            document.getElementById('currentTarget').textContent = currentTargetName();
-            state.lastStatusKey = '';
-            state.lastResultKey = '';
-            state.lastHistoryKey = '';
-            state.lastMatchedCount = -1;
-            resultState.page = 1;
-            historyState.page = 1;
-            detailState.page = 1;
-            refreshAll();
-        });
-
-        (async function init() {
-            await loadTargets();
-            startPolling();
-        })();
     </script>
 </body>
 </html>

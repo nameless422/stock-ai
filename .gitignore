@@ -1,9 +1,13 @@
 .venv/
 venv/
 env/
+.mypy_cache/
+.claude/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.log
 screening.db
+.env
+.env.*

@@ -5,7 +5,7 @@ from urllib.request import Request, urlopen
 
 import httpx
 
-from strategy_engine import build_strategy_context, run_strategy_code
+from .strategy_engine import build_strategy_context, run_strategy_code
 
 
 class MarketDataSource(Protocol):

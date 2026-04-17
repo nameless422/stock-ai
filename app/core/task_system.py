@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from typing import Callable, Optional
 
-from db import compat as sqlite3
+from db import compat as db
 
 
 TaskHandler = Callable[[dict, "TaskExecutionContext"], dict]
@@ -29,7 +29,7 @@ class TaskStore:
         target_id: Optional[int] = None,
         target_name: str = "",
     ) -> dict:
-        conn = sqlite3.connect(self.db_path)
+        conn = db.connect(self.db_path)
         c = conn.cursor()
         now = _now_text()
         c.execute(
@@ -61,8 +61,8 @@ class TaskStore:
         return self.get_task(task_id)
 
     def get_task(self, task_id: int) -> Optional[dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         row = c.execute("SELECT * FROM task_jobs WHERE id = ?", (task_id,)).fetchone()
         conn.close()
@@ -76,8 +76,8 @@ class TaskStore:
         target_id: Optional[int] = None,
         limit: int = 30,
     ) -> list[dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         sql = "SELECT * FROM task_jobs WHERE 1 = 1"
         params = []
@@ -100,8 +100,8 @@ class TaskStore:
         return [self._decode_row(dict(row)) for row in rows]
 
     def list_task_logs(self, task_id: int, limit: int = 100) -> list[dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         rows = c.execute(
             "SELECT * FROM task_logs WHERE task_id = ? ORDER BY id DESC LIMIT ?",
@@ -117,8 +117,8 @@ class TaskStore:
         target_id: Optional[int] = None,
         statuses: Optional[list[str]] = None,
     ) -> Optional[dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         sql = "SELECT * FROM task_jobs WHERE 1 = 1"
         params = []
@@ -141,8 +141,8 @@ class TaskStore:
         return self._decode_row(dict(row)) if row else None
 
     def acquire_next_task(self) -> Optional[dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         row = c.execute(
             """
@@ -175,8 +175,8 @@ class TaskStore:
         return self.get_task(task["id"])
 
     def recover_interrupted_tasks(self) -> int:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = db.connect(self.db_path)
+        conn.row_factory = db.Row
         c = conn.cursor()
         rows = c.execute("SELECT id FROM task_jobs WHERE status = 'running'").fetchall()
         now = _now_text()
@@ -257,14 +257,14 @@ class TaskStore:
         params.append(_now_text())
         params.append(task_id)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = db.connect(self.db_path)
         c = conn.cursor()
         c.execute(f"UPDATE task_jobs SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
         conn.close()
 
     def append_log(self, task_id: int, level: str, message: str) -> None:
-        conn = sqlite3.connect(self.db_path)
+        conn = db.connect(self.db_path)
         c = conn.cursor()
         c.execute(
             "INSERT INTO task_logs (task_id, level, message, created_at) VALUES (?, ?, ?, ?)",

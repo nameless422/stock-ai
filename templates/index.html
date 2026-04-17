@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>股票K线AI分析</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="/static/vendor/echarts.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -364,7 +364,6 @@
             <button class="search-btn" onclick="searchStock()">查询</button>
             <a href="/screener" class="search-btn" style="text-decoration:none;background:#26de81;">📈 策略选股</a>
             <a href="/strategies" class="search-btn" style="text-decoration:none;background:#f5b041;">🧠 策略管理</a>
-            <a href="/vt" class="search-btn" style="text-decoration:none;background:#e94560;">🎯 虚拟炒股</a>
         </div>
         <div class="search-results" id="searchResults"></div>
         
@@ -461,6 +460,10 @@
         
         // 初始化图表
         function initCharts() {
+            if (typeof echarts === 'undefined') {
+                showError('图表库加载失败，请检查静态资源是否可访问');
+                return;
+            }
             klineChart = echarts.init(document.getElementById('kline-chart'));
             macdChart = echarts.init(document.getElementById('macd-chart'));
             
@@ -527,19 +530,18 @@
             hideError();
             
             try {
-                // 并行加载股票信息、K线、指标
-                const [infoRes, klineRes, indicatorsRes] = await Promise.all([
-                    fetch(`/api/stock/${currentStock}`),
-                    fetch(`/api/kline/${currentStock}?period=${currentPeriod}`),
-                    fetch(`/api/indicators/${currentStock}?period=${currentPeriod}`)
-                ]);
-                
-                const info = await infoRes.json();
-                klineData = await klineRes.json();
-                indicatorsData = await indicatorsRes.json();
+                const res = await fetch(`/api/quote/${currentStock}?period=${currentPeriod}`);
+                const data = await res.json();
+                const info = data.stock_info || data;
+                klineData = data.kline;
+                indicatorsData = data.indicators;
                 
                 if (info.error) {
                     showError(info.error);
+                    return;
+                }
+                if (!klineData || klineData.error || !indicatorsData || indicatorsData.error) {
+                    showError((klineData && klineData.error) || (indicatorsData && indicatorsData.error) || '行情数据加载失败');
                     return;
                 }
                 

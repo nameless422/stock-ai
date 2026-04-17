@@ -2,668 +2,1345 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>策略管理</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>策略管理 · Stock AI</title>
+    <link rel="stylesheet" href="/static/base.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1523; color: #edf3ff; padding: 16px; }
-        .container { max-width: 1180px; margin: 0 auto; }
-        h1 { color: #ffd166; font-size: 28px; margin-bottom: 14px; }
-        .desc { color: #90a6c8; line-height: 1.7; margin-bottom: 18px; }
-        .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 16px; }
-        .card { background: linear-gradient(180deg, #162135, #0f1726); border: 1px solid #24324a; border-radius: 16px; padding: 18px; margin-bottom: 16px; }
-        .card h2 { font-size: 18px; margin-bottom: 12px; }
-        .card h3 { font-size: 15px; margin-bottom: 10px; color: #ffd166; }
-        input, textarea, select { width: 100%; background: #0a1220; color: #edf3ff; border: 1px solid #2c3b55; border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 10px; }
-        textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
-        .btn { border: none; border-radius: 10px; padding: 10px 14px; font-size: 14px; cursor: pointer; }
-        .btn:disabled { opacity: 0.7; cursor: wait; }
-        .btn.primary { background: #ffd166; color: #271800; }
-        .btn.secondary { background: #23324a; color: #dbe6f9; }
-        .btn.green { background: #33c481; color: #081910; }
-        .btn.danger { background: #ef476f; color: #fff; }
-        .list { display: grid; gap: 10px; }
-        .item { background: #0b1321; border: 1px solid #223049; border-radius: 12px; padding: 14px; }
-        .row { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .name { font-weight: 700; font-size: 16px; }
-        .small { color: #8ba0c0; font-size: 12px; line-height: 1.6; }
-        .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #20304a; color: #9ed4ff; font-size: 12px; margin-right: 6px; margin-top: 8px; }
-        .muted { color: #90a6c8; font-size: 13px; line-height: 1.6; }
-        .hint { color: #7f94b3; font-size: 12px; margin-bottom: 10px; }
-        .generate-status { display: none; align-items: center; gap: 10px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(11, 19, 33, 0.92); border: 1px solid #294260; color: #b8d8ff; font-size: 13px; line-height: 1.6; }
-        .generate-status.show { display: flex; }
-        .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(184, 216, 255, 0.22); border-top-color: #9ed4ff; animation: spin 0.9s linear infinite; flex: 0 0 auto; }
-        .editor-loading-mask { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(6, 12, 21, 0.72); backdrop-filter: blur(6px); border-radius: inherit; z-index: 5; }
-        .editor-loading-mask.show { display: flex; }
-        .editor-loading-card { min-width: min(100%, 320px); display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(13, 21, 35, 0.96); border: 1px solid #314a69; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28); color: #dbeafe; }
-        .editor-loading-card .spinner { width: 20px; height: 20px; border-width: 3px; }
-        .editor-loading-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
-        .editor-loading-desc { color: #9fb7db; font-size: 12px; line-height: 1.6; }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .hero { margin-bottom: var(--sp-5); }
+        .hero-title-row {
+            display: flex;
+            align-items: baseline;
+            gap: var(--sp-3);
+            flex-wrap: wrap;
+            margin-bottom: var(--sp-2);
         }
-        .checkbox-list { display: grid; gap: 8px; margin-bottom: 12px; }
-        .checkbox-item { display: flex; gap: 8px; align-items: center; background: #0b1321; padding: 10px; border-radius: 10px; }
-        .checkbox-item input { width: auto; margin: 0; }
-        .overlay { position: fixed; inset: 0; background: rgba(4, 10, 18, 0.72); backdrop-filter: blur(8px); z-index: 30; display: none; }
-        .overlay.show { display: block; }
-        .editor-card { position: relative; }
-        .editor-close { display: none; }
-        .mobile-hub { position: fixed; left: 12px; right: 12px; top: 50%; bottom: auto; transform: translateY(-50%); z-index: 60; display: none; pointer-events: none; }
-        .mobile-hub-card { background: linear-gradient(180deg, rgba(22, 33, 53, 0.98), rgba(15, 23, 38, 0.98)); border: 1px solid #31415d; border-radius: 20px; padding: 18px; box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35); pointer-events: auto; }
-        .mobile-hub-title { font-size: 18px; margin-bottom: 8px; }
-        .mobile-hub-desc { color: #90a6c8; font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
-        .mobile-hub-actions { display: grid; gap: 10px; }
-        .mobile-floating-trigger { display: none; }
-        .section-meta { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-        .pagination { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-        .pagination-info { color: #90a6c8; font-size: 12px; }
-        .pagination-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        @media (max-width: 900px) {
-            .grid { grid-template-columns: 1fr; }
+        .hero-desc {
+            color: var(--text-2);
+            font-size: 13px;
+            max-width: 720px;
+            line-height: 1.7;
+        }
+        .hero-desc code { color: var(--accent); }
+
+        /* 新手引导：三步流程 */
+        .flow-guide {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-5);
         }
         @media (max-width: 720px) {
-            body { padding: 12px; }
-            h1 { font-size: 24px; }
-            .desc { font-size: 13px; }
-            .card { padding: 14px; border-radius: 14px; }
-            .row { align-items: flex-start; }
-            .btn-row { display: grid; grid-template-columns: 1fr 1fr; }
-            .btn, .btn-row a { width: 100%; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
-            .checkbox-item { align-items: flex-start; }
-            .mobile-floating-trigger { position: fixed; right: 12px; bottom: 16px; z-index: 20; display: block; }
-            .mobile-floating-trigger .btn { width: auto; min-width: 120px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28); }
-            .editor-card { display: none; position: fixed; left: 12px; right: 12px; top: 12px; bottom: 12px; z-index: 70; overflow: auto; margin: 0; padding: 16px; border-radius: 20px; box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42); }
-            .editor-card.show { display: block; }
-            .editor-close { display: inline-flex; position: sticky; top: 0; margin-left: auto; margin-bottom: 10px; z-index: 2; }
-            .mobile-hub.show { display: block; pointer-events: auto; }
+            .flow-guide { grid-template-columns: 1fr; gap: var(--sp-2); }
         }
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            h1 { font-size: 22px; }
-            .card { padding: 12px; }
-            .btn-row { grid-template-columns: 1fr; }
-            .item { padding: 12px; }
-            input, textarea, select { font-size: 16px; }
-            .editor-card { left: 8px; right: 8px; top: 8px; bottom: 8px; padding: 14px; }
-            .mobile-hub { left: 8px; right: 8px; }
-            .mobile-floating-trigger { right: 8px; bottom: 12px; }
+        .flow-step {
+            display: flex;
+            gap: var(--sp-3);
+            padding: var(--sp-3) var(--sp-4);
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            align-items: flex-start;
+        }
+        .flow-step-num {
+            flex: 0 0 auto;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--primary-dim);
+            color: var(--primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .flow-step-body { flex: 1; min-width: 0; }
+        .flow-step-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+            margin-bottom: 2px;
+        }
+        .flow-step-desc {
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.6;
+        }
+
+        /* 顶部工具条：tab + 主按钮 */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-4);
+            flex-wrap: wrap;
+        }
+
+        /* 列表卡片 */
+        .list-grid {
+            display: grid;
+            gap: var(--sp-3);
+        }
+        @media (min-width: 720px) {
+            .list-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1200px) {
+            .list-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+
+        .entity-card {
+            background: var(--bg-elev);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            padding: var(--sp-4);
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-3);
+            animation: fade-in-up var(--t-fast) var(--ease) both;
+            transition: border-color var(--t-fast) var(--ease);
+        }
+        .entity-card:hover {
+            border-color: var(--border-strong);
+        }
+        .entity-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-2);
+        }
+        .entity-title-block { flex: 1; min-width: 0; }
+        .entity-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-1);
+            margin-right: var(--sp-2);
+            overflow-wrap: anywhere;
+        }
+        .entity-meta {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .entity-desc {
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.6;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .code-preview {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--r-sm);
+            padding: var(--sp-2) var(--sp-3);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-2);
+            line-height: 1.6;
+            max-height: 72px;
+            overflow: hidden;
+            white-space: pre-wrap;
+            position: relative;
+        }
+        .code-preview::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 32px;
+            background: linear-gradient(to bottom, transparent, var(--card));
+            pointer-events: none;
+        }
+        .entity-members {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .entity-actions {
+            display: flex;
+            gap: var(--sp-2);
+            margin-top: auto;
+            padding-top: var(--sp-2);
+            border-top: 1px solid var(--border);
+        }
+        .entity-actions .btn { flex: 1; }
+
+        /* 抽屉表单 */
+        .drawer-form {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .drawer-form-body {
+            flex: 1;
+            padding: var(--sp-4) var(--sp-5);
+            overflow-y: auto;
+        }
+        .drawer-form-footer {
+            padding: var(--sp-3) var(--sp-5);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--sp-2);
+            flex-shrink: 0;
+        }
+
+        /* 创建方式 segmented */
+        .mode-seg {
+            display: inline-flex;
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            overflow: hidden;
+            background: var(--bg-elev);
+        }
+        .mode-seg-btn {
+            padding: 6px 14px;
+            background: transparent;
+            border: none;
+            color: var(--text-2);
+            font-size: 12px;
+            cursor: pointer;
+            transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .mode-seg-btn:hover { color: var(--text-1); }
+        .mode-seg-btn.active {
+            background: var(--primary-dim);
+            color: var(--primary);
+        }
+        .mode-seg-badge {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: var(--primary);
+            color: var(--bg);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .mode-seg-btn:not(.active) .mode-seg-badge {
+            background: var(--border-strong);
+            color: var(--text-2);
+        }
+
+        /* AI 面板：强调输入框和主 CTA */
+        .ai-panel {
+            background: linear-gradient(180deg, rgba(91, 141, 239, 0.06), var(--bg-elev));
+            border: 1px solid rgba(91, 141, 239, 0.28);
+            border-radius: var(--r-md);
+            padding: var(--sp-4);
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-3);
+        }
+        .ai-panel-head {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-1);
+        }
+        .ai-panel-head .ai-icon {
+            color: var(--primary);
+            font-size: 16px;
+        }
+        .ai-panel-head .hint-lite {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-3);
+            margin-left: auto;
+        }
+        .prompt-textarea {
+            min-height: 100px;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+        .ai-actions {
+            display: flex;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .ai-actions .btn-primary { font-weight: 600; }
+        .ai-status {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            padding: 6px 10px;
+            background: var(--primary-dim);
+            border-radius: var(--r-sm);
+            font-size: 12px;
+            color: var(--primary);
+        }
+        .ai-slow-hint { color: var(--accent); }
+        .ai-generated-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--primary);
+            background: var(--primary-dim);
+            border-radius: var(--r-sm);
+            margin-top: var(--sp-2);
+        }
+
+        /* 代码 textarea 加高 */
+        .code-editor {
+            min-height: 260px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.55;
+            padding: var(--sp-3);
+            background: var(--bg);
+        }
+
+        /* Contract 参考 */
+        .contract-inputs {
+            display: grid;
+            gap: 2px 12px;
+            grid-template-columns: max-content max-content 1fr;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            align-items: baseline;
+        }
+        .contract-inputs .ci-name { color: var(--primary); }
+        .contract-inputs .ci-type { color: var(--accent); }
+        .contract-inputs .ci-desc { color: var(--text-2); overflow-wrap: anywhere; }
+
+        /* 保存成功态（抽屉内） */
+        .save-success {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--sp-3);
+            padding: var(--sp-5) var(--sp-4);
+            text-align: center;
+        }
+        .save-success-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: rgba(52, 199, 89, 0.15);
+            color: #34c759;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            font-weight: 700;
+            animation: pop var(--t-med) var(--ease);
+        }
+        @keyframes pop {
+            0% { transform: scale(0.6); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .save-success-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .save-success-name {
+            color: var(--primary);
+            font-weight: 600;
+        }
+        .save-success-desc {
+            font-size: 13px;
+            color: var(--text-2);
+            line-height: 1.7;
+            max-width: 360px;
+        }
+        .save-success-actions {
+            display: flex;
+            gap: var(--sp-2);
+            margin-top: var(--sp-3);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        [x-cloak] { display: none !important; }
+
+        /* 抽屉进出动画 */
+        .drawer-enter { transition: transform var(--t-med) var(--ease); }
+        .drawer-enter-start { transform: translateX(100%); }
+        .drawer-enter-end { transform: translateX(0); }
+        .drawer-leave { transition: transform var(--t-fast) var(--ease); }
+        .drawer-leave-start { transform: translateX(0); }
+        .drawer-leave-end { transform: translateX(100%); }
+
+        @media (max-width: 639px) {
+            .drawer-enter-start,
+            .drawer-leave-end {
+                transform: translateY(100%);
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>策略管理</h1>
-        <div class="desc">这里可以维护策略列表、组合成策略组，并用两种方式新增策略：直接写代码，或者用文字描述调用项目里的大模型兼容 API 生成代码草稿。</div>
+    <div class="page" x-data="strategies()" x-init="init()" x-cloak>
 
-        <div class="grid">
-            <div>
-                <div class="card">
-                    <h2>策略列表</h2>
-                    <div class="section-meta">
-                        <div id="strategySummary" class="muted">加载中...</div>
-                    </div>
-                    <div id="strategyList" class="list"><div class="muted">加载中...</div></div>
-                    <div id="strategyPagination" class="pagination" style="display:none;"></div>
-                </div>
+        <!-- 头部 -->
+        <header class="hero">
+            <div class="hero-title-row">
+                <h1 class="title-xl">策略管理</h1>
+            </div>
+            <div class="hero-desc">
+                用自然语言描述你的选股思路，AI 自动生成 <code>run_strategy(context)</code> 代码；保存后即可到
+                <a href="/screener">选股页</a> 对全量 A 股执行。也可以把多条策略组合成 AND / OR 策略组一起跑。
+            </div>
+        </header>
 
-                <div class="card">
-                    <h2>策略组</h2>
-                    <div class="section-meta">
-                        <div id="groupSummary" class="muted">加载中...</div>
-                    </div>
-                    <div id="groupList" class="list"><div class="muted">加载中...</div></div>
-                    <div id="groupPagination" class="pagination" style="display:none;"></div>
+        <!-- 三步引导 -->
+        <section class="flow-guide" aria-label="使用流程">
+            <div class="flow-step">
+                <span class="flow-step-num">1</span>
+                <div class="flow-step-body">
+                    <div class="flow-step-title">写下选股想法</div>
+                    <div class="flow-step-desc">用一句话描述你想筛的股票，比如"最近三天涨停且 MACD 金叉"。</div>
                 </div>
             </div>
+            <div class="flow-step">
+                <span class="flow-step-num">2</span>
+                <div class="flow-step-body">
+                    <div class="flow-step-title">AI 生成策略代码</div>
+                    <div class="flow-step-desc">点"生成代码"后系统会调用大模型写出 Python 策略，你也可以手动微调。</div>
+                </div>
+            </div>
+            <div class="flow-step">
+                <span class="flow-step-num">3</span>
+                <div class="flow-step-body">
+                    <div class="flow-step-title">到选股页跑全市场</div>
+                    <div class="flow-step-desc">保存后一键跳到选股页，对 5000+ 只 A 股执行并查看命中结果。</div>
+                </div>
+            </div>
+        </section>
 
-            <div class="desktop-editor-column">
-                <div class="card editor-card" id="strategyEditorCard">
-                    <div id="editorLoadingMask" class="editor-loading-mask" aria-hidden="true">
-                        <div class="editor-loading-card" role="status" aria-live="polite">
-                            <span class="spinner" aria-hidden="true"></span>
-                            <div>
-                                <div class="editor-loading-title">策略代码生成中</div>
-                                <div class="editor-loading-desc" id="editorLoadingText">LLM 正在处理你的描述，请稍候...</div>
+        <!-- 顶部工具条 -->
+        <div class="top-bar">
+            <div class="tab-bar">
+                <button class="tab-btn" :class="{ active: view === 'strategies' }" @click="view = 'strategies'">
+                    策略
+                    <span class="tab-count" x-text="strategies ? strategies.length : 0"></span>
+                </button>
+                <button class="tab-btn" :class="{ active: view === 'groups' }" @click="view = 'groups'">
+                    策略组
+                    <span class="tab-count" x-text="groups ? groups.length : 0"></span>
+                </button>
+            </div>
+            <button class="btn btn-primary" @click="openCreate()">
+                <span style="font-size: 14px; line-height: 1;">+</span>
+                <span x-text="view === 'groups' ? '新建策略组' : '新建策略'"></span>
+            </button>
+        </div>
+
+        <!-- 策略列表 -->
+        <section x-show="view === 'strategies'">
+            <template x-if="strategies === null">
+                <div class="list-grid">
+                    <div class="skeleton skeleton-row" style="height: 160px;"></div>
+                    <div class="skeleton skeleton-row" style="height: 160px;"></div>
+                    <div class="skeleton skeleton-row" style="height: 160px;"></div>
+                </div>
+            </template>
+
+            <template x-if="strategies !== null && strategies.length === 0">
+                <div class="card">
+                    <div class="empty">
+                        <div class="empty-icon">📝</div>
+                        <div>还没有策略</div>
+                        <button class="btn btn-primary" @click="openCreate()" style="margin-top: var(--sp-3);">新建第一个策略</button>
+                    </div>
+                </div>
+            </template>
+
+            <div class="list-grid" x-show="strategies && strategies.length > 0">
+                <template x-for="item in paginatedStrategies" :key="item.id">
+                    <article class="entity-card">
+                        <div class="entity-head">
+                            <div class="entity-title-block">
+                                <span class="entity-name" x-text="item.name"></span>
+                                <div class="entity-meta">
+                                    <span class="badge" :class="item.enabled ? 'badge-ok' : 'badge-dim'"
+                                          x-text="item.enabled ? '启用中' : '已停用'"></span>
+                                    <span class="badge badge-dim"
+                                          x-text="item.create_mode === 'ai' ? 'AI 生成' : (item.create_mode === 'builtin' ? '内置' : '手动')"></span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <button class="btn secondary editor-close" type="button" onclick="closeEditorCard('strategyEditorCard')">关闭</button>
-                    <h2>新增/编辑策略</h2>
-                    <input type="hidden" id="strategyId" />
-                    <input id="strategyName" placeholder="策略名称" />
-                    <input id="strategyDesc" placeholder="策略描述" />
-                    <select id="strategyMode" onchange="switchStrategyMode()">
-                        <option value="direct">直接写代码</option>
-                        <option value="ai">文字生成代码</option>
-                    </select>
-                    <div id="aiPromptWrap" style="display:none;">
-                        <textarea id="strategyPrompt" placeholder="例如：找出最近20日站上 MA20，且日线 MACD 金叉，同时周线未出现 4 连阳的股票"></textarea>
-                        <div class="btn-row" style="margin-bottom:10px;">
-                            <button class="btn green" id="generateCodeBtn" onclick="generateCode()">生成代码</button>
-                            <button class="btn secondary" id="copyPromptBtn" onclick="copyLlmContext()">复制 LLM 上下文</button>
+                        <div class="entity-desc" x-text="item.description || '（无描述）'"></div>
+                        <pre class="code-preview" x-text="previewCode(item.code)"></pre>
+                        <div class="entity-actions">
+                            <button class="btn btn-ghost btn-sm" @click="openEditStrategy(item)">编辑</button>
+                            <button class="btn btn-danger btn-sm" @click="deleteStrategy(item)" :disabled="item.create_mode === 'builtin'">删除</button>
                         </div>
-                        <div id="generateStatus" class="generate-status" aria-live="polite">
-                            <span class="spinner" aria-hidden="true"></span>
-                            <span id="generateStatusText">正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 0 秒</span>
-                        </div>
-                        <textarea id="llmContextOutput" style="display:none; min-height:220px; margin-top:10px;" readonly placeholder="复制失败时，这里会显示可手动复制的 LLM 上下文"></textarea>
-                    </div>
-                    <textarea id="strategyCode" style="min-height:260px;" placeholder="策略代码必须定义 run_strategy(context)"></textarea>
-                    <label class="small" style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
-                        <input type="checkbox" id="strategyEnabled" checked style="width:auto; margin:0;" />
-                        启用该策略
-                    </label>
-                    <div class="btn-row">
-                        <button class="btn primary" onclick="saveStrategy()">保存策略</button>
-                        <button class="btn secondary" onclick="resetStrategyForm()">清空</button>
-                    </div>
-                </div>
+                    </article>
+                </template>
+            </div>
 
-                <div class="card editor-card" id="groupEditorCard">
-                    <button class="btn secondary editor-close" type="button" onclick="closeEditorCard('groupEditorCard')">关闭</button>
-                    <h2>新增/编辑策略组</h2>
-                    <input type="hidden" id="groupId" />
-                    <input id="groupName" placeholder="策略组名称" />
-                    <input id="groupDesc" placeholder="策略组描述" />
-                    <select id="groupMode">
-                        <option value="AND">全部满足</option>
-                        <option value="OR">满足任一策略</option>
-                    </select>
-                    <div class="hint">勾选要包含在策略组内的策略</div>
-                    <div id="groupStrategyList" class="checkbox-list"></div>
-                    <div class="btn-row">
-                        <button class="btn primary" onclick="saveGroup()">保存策略组</button>
-                        <button class="btn secondary" onclick="resetGroupForm()">清空</button>
-                    </div>
+            <div class="pager" x-show="strategies && strategies.length > PAGE_SIZE">
+                <div class="pager-info">
+                    共 <span x-text="strategies.length"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
                 </div>
+                <div class="pager-actions">
+                    <button class="btn btn-ghost btn-sm" @click="strategiesPage = 1" :disabled="strategiesPage === 1">首页</button>
+                    <button class="btn btn-ghost btn-sm" @click="strategiesPage--" :disabled="strategiesPage === 1">上一页</button>
+                    <span class="pager-chip" x-text="`${strategiesPage} / ${totalPages(strategies)}`"></span>
+                    <button class="btn btn-ghost btn-sm" @click="strategiesPage++" :disabled="strategiesPage >= totalPages(strategies)">下一页</button>
+                    <button class="btn btn-ghost btn-sm" @click="strategiesPage = totalPages(strategies)" :disabled="strategiesPage >= totalPages(strategies)">末页</button>
+                </div>
+            </div>
+        </section>
 
+        <!-- 策略组列表 -->
+        <section x-show="view === 'groups'">
+            <template x-if="groups === null">
+                <div class="list-grid">
+                    <div class="skeleton skeleton-row" style="height: 140px;"></div>
+                    <div class="skeleton skeleton-row" style="height: 140px;"></div>
+                </div>
+            </template>
+
+            <template x-if="groups !== null && groups.length === 0">
                 <div class="card">
-                    <h2>页面导航</h2>
-                    <div class="btn-row">
-                        <a class="btn secondary" href="/screener">去运行选股</a>
-                        <a class="btn secondary" href="/">股票分析</a>
-                        <a class="btn secondary" href="/vt">虚拟炒股</a>
+                    <div class="empty">
+                        <div class="empty-icon">🧩</div>
+                        <div>还没有策略组</div>
+                        <div class="text-3">把多个策略按 AND/OR 组合起来，一次扫描触发</div>
+                        <button class="btn btn-primary" @click="openCreate()" style="margin-top: var(--sp-3);">新建策略组</button>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
+            </template>
 
-    <div class="overlay" id="mobileOverlay" onclick="closeAllMobileLayers()"></div>
-    <div class="mobile-floating-trigger">
-        <button class="btn primary" type="button" onclick="openConfigHub()">配置策略</button>
-    </div>
-    <div class="mobile-hub" id="mobileHub">
-        <div class="mobile-hub-card">
-            <div class="mobile-hub-title">移动端配置入口</div>
-            <div class="mobile-hub-desc">先选择配置类型，再进入第二层弹窗填写详细内容。</div>
-            <div class="mobile-hub-actions">
-                <button class="btn primary" type="button" onclick="openStrategyEditor()">配置策略</button>
-                <button class="btn secondary" type="button" onclick="openGroupEditor()">配置策略组</button>
-                <button class="btn secondary" type="button" onclick="closeConfigHub()">取消</button>
+            <div class="list-grid" x-show="groups && groups.length > 0">
+                <template x-for="item in paginatedGroups" :key="item.id">
+                    <article class="entity-card">
+                        <div class="entity-head">
+                            <div class="entity-title-block">
+                                <span class="entity-name" x-text="item.name"></span>
+                                <div class="entity-meta">
+                                    <span class="badge badge-accent" x-text="item.match_mode || 'AND'"></span>
+                                    <span class="badge badge-dim"
+                                          x-text="`${(item.strategies || []).length} 个策略`"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="entity-desc" x-text="item.description || '（无描述）'"></div>
+                        <div class="entity-members">
+                            <template x-for="s in (item.strategies || [])" :key="s.id">
+                                <span class="pill" x-text="s.name"></span>
+                            </template>
+                            <template x-if="(item.strategies || []).length === 0">
+                                <span class="text-3 text-small">未包含任何策略</span>
+                            </template>
+                        </div>
+                        <div class="entity-actions">
+                            <button class="btn btn-ghost btn-sm" @click="openEditGroup(item)">编辑</button>
+                            <button class="btn btn-danger btn-sm" @click="deleteGroup(item)">删除</button>
+                        </div>
+                    </article>
+                </template>
             </div>
+
+            <div class="pager" x-show="groups && groups.length > PAGE_SIZE">
+                <div class="pager-info">
+                    共 <span x-text="groups.length"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
+                </div>
+                <div class="pager-actions">
+                    <button class="btn btn-ghost btn-sm" @click="groupsPage = 1" :disabled="groupsPage === 1">首页</button>
+                    <button class="btn btn-ghost btn-sm" @click="groupsPage--" :disabled="groupsPage === 1">上一页</button>
+                    <span class="pager-chip" x-text="`${groupsPage} / ${totalPages(groups)}`"></span>
+                    <button class="btn btn-ghost btn-sm" @click="groupsPage++" :disabled="groupsPage >= totalPages(groups)">下一页</button>
+                    <button class="btn btn-ghost btn-sm" @click="groupsPage = totalPages(groups)" :disabled="groupsPage >= totalPages(groups)">末页</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 底部导航 -->
+        <footer class="nav-links" style="margin-top: var(--sp-5); justify-content: center;">
+            <a href="/">股票分析</a>
+            <span>·</span>
+            <a href="/screener">策略选股</a>
+            <span>·</span>
+        </footer>
+
+        <!-- ======================================================== -->
+        <!-- 抽屉：策略 / 策略组 编辑器 -->
+        <!-- ======================================================== -->
+        <template x-if="editor">
+            <div>
+                <div class="drawer-backdrop" x-transition.opacity @click="maybeCloseEditor()"></div>
+                <aside class="drawer drawer-sheet"
+                       x-transition:enter="drawer-enter"
+                       x-transition:enter-start="drawer-enter-start"
+                       x-transition:enter-end="drawer-enter-end"
+                       x-transition:leave="drawer-leave"
+                       x-transition:leave-start="drawer-leave-start"
+                       x-transition:leave-end="drawer-leave-end"
+                       style="width: min(100%, 640px);">
+                    <header class="drawer-header">
+                        <div class="title-lg" x-text="editorTitle()"></div>
+                        <button class="btn btn-ghost btn-icon" @click="maybeCloseEditor()" aria-label="关闭">✕</button>
+                    </header>
+
+                    <form class="drawer-form" @submit.prevent="submitEditor()" x-show="!editor.saved">
+                        <div class="drawer-form-body">
+                            <!-- 错误 banner -->
+                            <div class="banner banner-danger" x-show="editor && editor.error" style="margin-bottom: var(--sp-4);">
+                                <span class="banner-icon">⚠</span>
+                                <div class="banner-body" x-text="editor && editor.error"></div>
+                            </div>
+
+                            <!-- ============ 策略表单 ============ -->
+                            <template x-if="editor && editor.kind === 'strategy'">
+                                <div>
+                                    <div class="form-field">
+                                        <label class="form-label form-label-required">策略名称</label>
+                                        <input class="input" type="text" maxlength="120"
+                                               x-model="editor.form.name"
+                                               placeholder="例如：强势金叉突破"
+                                               :disabled="editor.form.builtin">
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label">描述</label>
+                                        <textarea class="input" rows="2"
+                                                  x-model="editor.form.description"
+                                                  placeholder="这条策略在筛什么票？（选填，写给自己看）"
+                                                  :disabled="editor.form.builtin"></textarea>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label">创建方式</label>
+                                        <div class="mode-seg">
+                                            <button type="button" class="mode-seg-btn"
+                                                    :class="{ active: editor.form.mode === 'ai' }"
+                                                    @click="editor.form.mode = 'ai'">
+                                                AI 文字生成
+                                                <span class="mode-seg-badge">推荐</span>
+                                            </button>
+                                            <button type="button" class="mode-seg-btn"
+                                                    :class="{ active: editor.form.mode === 'direct' }"
+                                                    @click="editor.form.mode = 'direct'">手写代码</button>
+                                        </div>
+                                        <div class="form-hint" x-show="editor.form.mode === 'ai'">
+                                            用自然语言描述筛选逻辑，由大模型自动写成 Python 代码；生成后可继续手动微调。
+                                        </div>
+                                        <div class="form-hint" x-show="editor.form.mode === 'direct'">
+                                            直接编写 <code>run_strategy(context)</code>。不熟悉接口时推荐先用 AI 生成样板。
+                                        </div>
+                                    </div>
+
+                                    <!-- AI 生成面板 -->
+                                    <div class="form-field" x-show="editor.form.mode === 'ai'">
+                                        <label class="form-label form-label-required">用一句话描述你的选股逻辑</label>
+                                        <div class="ai-panel">
+                                            <div class="ai-panel-head">
+                                                <span class="ai-icon">✨</span>
+                                                <span>AI 代码生成</span>
+                                                <span class="hint-lite">越具体的描述，生成越准</span>
+                                            </div>
+                                            <textarea class="input prompt-textarea"
+                                                      x-model="editor.form.prompt"
+                                                      placeholder="例：最近 5 个交易日成交量较前 20 日均量放大 2 倍以上，并且日线 MACD 刚刚金叉、收盘价站上 MA20 的股票。"></textarea>
+                                            <div class="ai-actions">
+                                                <button type="button" class="btn btn-primary"
+                                                        @click="generateCode()"
+                                                        :disabled="llm.running || !editor.form.prompt.trim()">
+                                                    <template x-if="llm.running"><span class="spinner spinner-on-primary"></span></template>
+                                                    <span x-text="llm.running ? '生成中…' : '✨ 生成代码'"></span>
+                                                </button>
+                                                <button type="button" class="btn btn-danger btn-sm"
+                                                        x-show="llm.running"
+                                                        @click="cancelGeneration()">取消</button>
+                                                <button type="button" class="btn btn-ghost btn-sm"
+                                                        @click="copyContext()"
+                                                        :disabled="!editor.form.prompt.trim()">
+                                                    复制 prompt 到外部模型
+                                                </button>
+                                            </div>
+                                            <div class="ai-status" x-show="llm.running">
+                                                <span class="spinner"></span>
+                                                <span>AI 思考中，已用 <span x-text="llm.elapsed"></span> 秒</span>
+                                                <span class="ai-slow-hint" x-show="llm.elapsed >= 10">· 模型响应较慢，请耐心等</span>
+                                            </div>
+                                            <div class="ai-generated-arrow" x-show="editor.lastGeneratedAt">
+                                                <span>✓ 代码已生成</span>
+                                                <span>↓ 可在下方继续微调</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label form-label-required"
+                                               x-text="editor.form.mode === 'ai' ? '生成的代码（可继续修改）' : '策略代码'"></label>
+                                        <textarea class="input code-editor"
+                                                  x-model="editor.form.code"
+                                                  spellcheck="false"
+                                                  placeholder="def run_strategy(context):&#10;    return {'pass': True, 'reason': '...'}"></textarea>
+                                        <div class="form-hint">
+                                            必须定义 <code>run_strategy(context)</code>，返回 <code>{pass, reason, score?, metrics?}</code>。保存前会用空上下文试跑一次。
+                                        </div>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="check-inline">
+                                            <input type="checkbox" x-model="editor.form.enabled">
+                                            启用这条策略（停用后不会出现在选股页下拉里）
+                                        </label>
+                                    </div>
+
+                                    <!-- Contract 参考 -->
+                                    <div class="collapsible" :class="{ 'is-open': contractOpen }">
+                                        <div class="collapsible-head" @click="toggleContract()">
+                                            <span>📘 context 可用字段（<span x-text="contract ? contract.inputs.length : 0"></span> 个）</span>
+                                            <span class="chev">›</span>
+                                        </div>
+                                        <div class="collapsible-body" x-show="contractOpen" x-transition>
+                                            <template x-if="contract">
+                                                <div>
+                                                    <div class="contract-inputs">
+                                                        <template x-for="inp in contract.inputs" :key="inp.name">
+                                                            <template x-for="(val, idx) in [null]" :key="'r' + inp.name">
+                                                                <div style="display: contents;">
+                                                                    <span class="ci-name" x-text="inp.name"></span>
+                                                                    <span class="ci-type" x-text="inp.type"></span>
+                                                                    <span class="ci-desc" x-text="inp.description"></span>
+                                                                </div>
+                                                            </template>
+                                                        </template>
+                                                    </div>
+                                                    <div style="margin-top: var(--sp-3); font-size: 11px;">
+                                                        <div class="text-2" style="margin-bottom: 4px;">返回字段：</div>
+                                                        <template x-for="(desc, key) in contract.output" :key="key">
+                                                            <div style="font-family: var(--font-mono); font-size: 11px;">
+                                                                <span style="color: var(--primary);" x-text="key"></span>
+                                                                <span style="color: var(--text-3);"> — </span>
+                                                                <span class="text-2" x-text="desc"></span>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <template x-if="!contract">
+                                                <div class="text-3">加载中…</div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- ============ 策略组表单 ============ -->
+                            <template x-if="editor && editor.kind === 'group'">
+                                <div>
+                                    <div class="form-field">
+                                        <label class="form-label form-label-required">策略组名称</label>
+                                        <input class="input" type="text" maxlength="120"
+                                               x-model="editor.form.name"
+                                               placeholder="例如：趋势突破组合">
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label">描述</label>
+                                        <textarea class="input" rows="2"
+                                                  x-model="editor.form.description"
+                                                  placeholder="这个组里的策略合在一起表达什么意图"></textarea>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label">匹配模式</label>
+                                        <div class="mode-seg">
+                                            <button type="button" class="mode-seg-btn"
+                                                    :class="{ active: editor.form.match_mode === 'AND' }"
+                                                    @click="editor.form.match_mode = 'AND'">AND · 全命中</button>
+                                            <button type="button" class="mode-seg-btn"
+                                                    :class="{ active: editor.form.match_mode === 'OR' }"
+                                                    @click="editor.form.match_mode = 'OR'">OR · 任意命中</button>
+                                        </div>
+                                        <div class="form-hint">
+                                            AND：股票需同时满足组内所有策略；OR：股票命中组内任意一个策略即可。
+                                        </div>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label class="form-label form-label-required">
+                                            包含策略
+                                            <span class="text-3 text-small" style="font-weight: 400;">
+                                                （已选 <span x-text="editor.form.strategy_ids.length"></span>）
+                                            </span>
+                                        </label>
+                                        <template x-if="strategies && strategies.length > 0">
+                                            <div class="member-list">
+                                                <template x-for="s in enabledStrategies()" :key="s.id">
+                                                    <label class="member-item"
+                                                           :class="{ 'is-checked': editor.form.strategy_ids.includes(s.id) }">
+                                                        <input type="checkbox"
+                                                               :value="s.id"
+                                                               :checked="editor.form.strategy_ids.includes(s.id)"
+                                                               @change="toggleStrategyMember(s.id, $event.target.checked)">
+                                                        <div class="member-item-body">
+                                                            <div class="member-item-name" x-text="s.name"></div>
+                                                            <div class="member-item-desc" x-text="s.description || '（无描述）'"></div>
+                                                        </div>
+                                                    </label>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <template x-if="!strategies || strategies.length === 0">
+                                            <div class="banner banner-warn">
+                                                <span class="banner-icon">⚠</span>
+                                                <div class="banner-body">
+                                                    还没有启用的策略，请先去"策略"Tab 创建一条。
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <footer class="drawer-form-footer">
+                            <button type="button" class="btn btn-ghost" @click="maybeCloseEditor()">取消</button>
+                            <button type="submit" class="btn btn-primary" :disabled="editor.saving || llm.running">
+                                <template x-if="editor.saving"><span class="spinner spinner-on-primary"></span></template>
+                                <span x-text="editor.saving ? '保存中…' : '保存'"></span>
+                            </button>
+                        </footer>
+                    </form>
+
+                    <!-- 保存成功态 -->
+                    <div class="save-success" x-show="editor.saved">
+                        <div class="save-success-icon">✓</div>
+                        <div class="save-success-title">
+                            <span x-text="editor.saved && editor.saved.kind === 'group' ? '策略组已保存' : '策略已保存'"></span>
+                        </div>
+                        <div>
+                            <span class="save-success-name" x-text="editor.saved && editor.saved.name"></span>
+                        </div>
+                        <div class="save-success-desc">
+                            接下来去<strong>选股页</strong>，对全量 A 股执行这条<span x-text="editor.saved && editor.saved.kind === 'group' ? '策略组' : '策略'"></span>，看它能筛出哪些票。
+                        </div>
+                        <div class="banner banner-warn"
+                             x-show="editor.saved && editor.saved.kind === 'strategy' && editor.saved.enabled === false"
+                             style="max-width: 420px;">
+                            <span class="banner-icon">⚠</span>
+                            <div class="banner-body">
+                                这条策略当前是<strong>停用</strong>状态，选股页下拉里看不到它。
+                            </div>
+                        </div>
+                        <div class="save-success-actions">
+                            <button type="button" class="btn btn-ghost" @click="closeSavedEditor()">继续管理策略</button>
+                            <button type="button" class="btn btn-primary" @click="runOnScreener()"
+                                    :disabled="editor.saved && editor.saved.kind === 'strategy' && editor.saved.enabled === false">
+                                <span>去选股页运行</span>
+                                <span style="margin-left: 4px;">→</span>
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </template>
+
+        <!-- Toast 栈 -->
+        <div class="toast-stack">
+            <template x-for="t in toasts" :key="t.id">
+                <div class="toast" :class="`toast-${t.kind}`" x-text="t.text"></div>
+            </template>
         </div>
+
     </div>
 
     <script>
-        let strategyData = [];
-        let groupData = [];
-        const MOBILE_BREAKPOINT = 720;
-        const STRATEGY_PAGE_SIZE = 6;
-        const GROUP_PAGE_SIZE = 6;
-        let strategyPage = 1;
-        let groupPage = 1;
-
-        function isMobileLayout() {
-            return window.innerWidth <= MOBILE_BREAKPOINT;
-        }
-
-        function getPaginationData(items, currentPage, pageSize) {
-            const total = items.length;
-            const totalPages = Math.max(1, Math.ceil(total / pageSize));
-            const safePage = Math.min(Math.max(currentPage, 1), totalPages);
-            const start = total === 0 ? 0 : (safePage - 1) * pageSize;
-            const end = Math.min(start + pageSize, total);
+        function strategies() {
             return {
-                total,
-                totalPages,
-                currentPage: safePage,
-                pageItems: items.slice(start, end),
-                start,
-                end,
-            };
-        }
+                // ========== 常量 ==========
+                PAGE_SIZE: 9,
 
-        function renderPagination(containerId, pagination, onPageChange) {
-            const el = document.getElementById(containerId);
-            if (pagination.total <= 0) {
-                el.style.display = 'none';
-                el.innerHTML = '';
-                return;
-            }
-            el.style.display = 'flex';
-            el.innerHTML = `
-                <div class="pagination-info">第 ${pagination.currentPage} / ${pagination.totalPages} 页，共 ${pagination.total} 条</div>
-                <div class="pagination-actions">
-                    <button class="btn secondary" ${pagination.currentPage <= 1 ? 'disabled' : ''} onclick="${onPageChange}(${pagination.currentPage - 1})">上一页</button>
-                    <button class="btn secondary" ${pagination.currentPage >= pagination.totalPages ? 'disabled' : ''} onclick="${onPageChange}(${pagination.currentPage + 1})">下一页</button>
-                </div>
-            `;
-        }
+                // ========== 视图 ==========
+                view: 'strategies',          // 'strategies' | 'groups'
 
-        function toggleOverlay(show) {
-            document.getElementById('mobileOverlay').classList.toggle('show', !!show);
-        }
+                // ========== 数据 ==========
+                strategies: null,
+                groups: null,
+                contract: null,
+                contractOpen: false,
 
-        function openConfigHub() {
-            if (!isMobileLayout()) {
-                return;
-            }
-            closeEditorCard('strategyEditorCard');
-            closeEditorCard('groupEditorCard');
-            document.getElementById('mobileHub').classList.add('show');
-            toggleOverlay(true);
-            document.body.style.overflow = 'hidden';
-        }
+                // ========== 分页 ==========
+                strategiesPage: 1,
+                groupsPage: 1,
 
-        function closeConfigHub() {
-            document.getElementById('mobileHub').classList.remove('show');
-            if (!document.querySelector('.editor-card.show')) {
-                toggleOverlay(false);
-                document.body.style.overflow = '';
-            }
-        }
+                // ========== 编辑器 ==========
+                editor: null,
+                // 结构：{ kind: 'strategy'|'group', mode: 'create'|'edit', originalId?, form: {...}, error: null, saving: false }
 
-        function openEditorCard(cardId) {
-            if (!isMobileLayout()) {
-                return;
-            }
-            closeConfigHub();
-            document.getElementById(cardId).classList.add('show');
-            toggleOverlay(true);
-            document.body.style.overflow = 'hidden';
-        }
+                // ========== LLM ==========
+                llm: { running: false, elapsed: 0, controller: null, timerId: null },
 
-        function closeEditorCard(cardId) {
-            document.getElementById(cardId).classList.remove('show');
-            if (!document.querySelector('.editor-card.show')) {
-                document.body.style.overflow = '';
-                toggleOverlay(false);
-            }
-        }
+                // ========== Toast ==========
+                toasts: [],
+                _toastSeq: 0,
 
-        function closeAllMobileLayers() {
-            closeConfigHub();
-            closeEditorCard('strategyEditorCard');
-            closeEditorCard('groupEditorCard');
-        }
+                // ========== 计算属性 ==========
+                get paginatedStrategies() {
+                    if (!this.strategies) return [];
+                    const start = (this.strategiesPage - 1) * this.PAGE_SIZE;
+                    return this.strategies.slice(start, start + this.PAGE_SIZE);
+                },
+                get paginatedGroups() {
+                    if (!this.groups) return [];
+                    const start = (this.groupsPage - 1) * this.PAGE_SIZE;
+                    return this.groups.slice(start, start + this.PAGE_SIZE);
+                },
 
-        function openStrategyEditor() {
-            openEditorCard('strategyEditorCard');
-        }
+                // ========== 初始化 ==========
+                async init() {
+                    await this.loadAll();
+                    // 懒加载 contract（打开策略编辑器时再取）
+                },
 
-        function openGroupEditor() {
-            openEditorCard('groupEditorCard');
-        }
-
-        function switchStrategyMode() {
-            document.getElementById('aiPromptWrap').style.display = document.getElementById('strategyMode').value === 'ai' ? 'block' : 'none';
-        }
-
-        function escapeHtml(text) {
-            return String(text || '').replace(/[&<>"]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s]));
-        }
-
-        function renderStrategies() {
-            const el = document.getElementById('strategyList');
-            const pagination = getPaginationData(strategyData, strategyPage, STRATEGY_PAGE_SIZE);
-            strategyPage = pagination.currentPage;
-            document.getElementById('strategySummary').textContent = pagination.total
-                ? `当前展示 ${pagination.start + 1}-${pagination.end} 条，共 ${pagination.total} 条`
-                : '暂无策略';
-            if (!pagination.total) {
-                el.innerHTML = '<div class="muted">暂无策略</div>';
-                renderPagination('strategyPagination', pagination, 'changeStrategyPage');
-                return;
-            }
-            el.innerHTML = pagination.pageItems.map(item => `
-                <div class="item">
-                    <div class="row">
-                        <div>
-                            <div class="name">${item.name}</div>
-                            <div class="small">${item.description || '无描述'}</div>
-                        </div>
-                        <div class="small">${item.enabled ? '启用中' : '已停用'} | ${item.create_mode || 'direct'}</div>
-                    </div>
-                    <div>${item.enabled ? '<span class="pill">可执行</span>' : '<span class="pill">停用</span>'}</div>
-                    <div class="btn-row" style="margin-top:10px;">
-                        <button class="btn secondary" onclick="editStrategy(${item.id})">编辑</button>
-                        <button class="btn danger" onclick="deleteStrategy(${item.id})">删除</button>
-                    </div>
-                </div>
-            `).join('');
-            renderPagination('strategyPagination', pagination, 'changeStrategyPage');
-        }
-
-        function renderGroups() {
-            const el = document.getElementById('groupList');
-            const pagination = getPaginationData(groupData, groupPage, GROUP_PAGE_SIZE);
-            groupPage = pagination.currentPage;
-            document.getElementById('groupSummary').textContent = pagination.total
-                ? `当前展示 ${pagination.start + 1}-${pagination.end} 条，共 ${pagination.total} 条`
-                : '暂无策略组';
-            if (!pagination.total) {
-                el.innerHTML = '<div class="muted">暂无策略组</div>';
-                renderPagination('groupPagination', pagination, 'changeGroupPage');
-                return;
-            }
-            el.innerHTML = pagination.pageItems.map(item => `
-                <div class="item">
-                    <div class="row">
-                        <div>
-                            <div class="name">${item.name}</div>
-                            <div class="small">${item.description || '无描述'}</div>
-                        </div>
-                        <div class="small">${item.match_mode || 'AND'}</div>
-                    </div>
-                    <div>${(item.strategies || []).map(s => `<span class="pill">${s.name}</span>`).join('')}</div>
-                    <div class="btn-row" style="margin-top:10px;">
-                        <button class="btn secondary" onclick="editGroup(${item.id})">编辑</button>
-                        <button class="btn danger" onclick="deleteGroup(${item.id})">删除</button>
-                    </div>
-                </div>
-            `).join('');
-            renderPagination('groupPagination', pagination, 'changeGroupPage');
-        }
-
-        function changeStrategyPage(page) {
-            strategyPage = page;
-            renderStrategies();
-        }
-
-        function changeGroupPage(page) {
-            groupPage = page;
-            renderGroups();
-        }
-
-        function renderGroupStrategyOptions(selectedIds = []) {
-            const el = document.getElementById('groupStrategyList');
-            const enabledStrategies = strategyData.filter(item => item.enabled);
-            if (!enabledStrategies.length) {
-                el.innerHTML = '<div class="muted">暂无可用策略，请先创建并启用策略</div>';
-                return;
-            }
-            el.innerHTML = enabledStrategies.map(item => `
-                <label class="checkbox-item">
-                    <input type="checkbox" value="${item.id}" ${selectedIds.includes(item.id) ? 'checked' : ''} />
-                    <span>${item.name}</span>
-                </label>
-            `).join('');
-        }
-
-        function editStrategy(id) {
-            const item = strategyData.find(s => s.id === id);
-            if (!item) return;
-            document.getElementById('strategyId').value = item.id;
-            document.getElementById('strategyName').value = item.name || '';
-            document.getElementById('strategyDesc').value = item.description || '';
-            document.getElementById('strategyCode').value = item.code || '';
-            document.getElementById('strategyMode').value = item.create_mode === 'ai' ? 'ai' : 'direct';
-            document.getElementById('strategyEnabled').checked = !!item.enabled;
-            switchStrategyMode();
-            if (isMobileLayout()) {
-                openStrategyEditor();
-            }
-        }
-
-        function resetStrategyForm() {
-            document.getElementById('strategyId').value = '';
-            document.getElementById('strategyName').value = '';
-            document.getElementById('strategyDesc').value = '';
-            document.getElementById('strategyPrompt').value = '';
-            document.getElementById('strategyCode').value = '';
-            document.getElementById('strategyMode').value = 'direct';
-            document.getElementById('strategyEnabled').checked = true;
-            switchStrategyMode();
-        }
-
-        async function saveStrategy() {
-            const id = document.getElementById('strategyId').value;
-            const payload = {
-                name: document.getElementById('strategyName').value.trim(),
-                description: document.getElementById('strategyDesc').value.trim(),
-                code: document.getElementById('strategyCode').value,
-                enabled: document.getElementById('strategyEnabled').checked,
-                create_mode: document.getElementById('strategyMode').value,
-            };
-            const url = id ? `/api/strategies/${id}` : '/api/strategies';
-            const method = id ? 'PUT' : 'POST';
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.error || '保存失败');
-                return;
-            }
-            resetStrategyForm();
-            if (isMobileLayout()) {
-                closeEditorCard('strategyEditorCard');
-            }
-            await loadAll();
-        }
-
-        async function deleteStrategy(id) {
-            if (!confirm('确定删除这个策略吗？')) return;
-            const res = await fetch(`/api/strategies/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.error || '删除失败');
-                return;
-            }
-            await loadAll();
-        }
-
-        async function generateCode() {
-            const prompt = document.getElementById('strategyPrompt').value.trim();
-            if (!prompt) {
-                alert('请先输入策略描述');
-                return;
-            }
-            const button = document.getElementById('generateCodeBtn');
-            const status = document.getElementById('generateStatus');
-            const statusText = document.getElementById('generateStatusText');
-            const editorMask = document.getElementById('editorLoadingMask');
-            const editorLoadingText = document.getElementById('editorLoadingText');
-            const originalLabel = button.textContent;
-            const originalStatusText = statusText.textContent;
-            const originalEditorLoadingText = editorLoadingText.textContent;
-            let slowHintTimer = null;
-            let elapsedTimer = null;
-            let elapsedSeconds = 0;
-            button.disabled = true;
-            button.textContent = '生成中...';
-            statusText.textContent = originalStatusText;
-            status.classList.add('show');
-            editorMask.classList.add('show');
-            editorLoadingText.textContent = originalEditorLoadingText;
-            elapsedTimer = setInterval(() => {
-                elapsedSeconds += 1;
-                if (elapsedSeconds >= 10) {
-                    statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
-                    editorLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
-                    return;
-                }
-                statusText.textContent = `正在调用 LLM 生成策略代码，通常需要几秒到几十秒，请稍候... 已等待 ${elapsedSeconds} 秒`;
-                editorLoadingText.textContent = `LLM 正在处理你的描述，请稍候... 已等待 ${elapsedSeconds} 秒`;
-            }, 1000);
-            slowHintTimer = setTimeout(() => {
-                statusText.textContent = `模型响应较慢，但仍在处理中，请继续稍候，不需要重复点击。已等待 ${elapsedSeconds} 秒`;
-                editorLoadingText.textContent = `模型响应较慢，但仍在处理中。已等待 ${elapsedSeconds} 秒`;
-            }, 10000);
-            try {
-                const res = await fetch('/api/strategies/generate-code', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt }),
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    alert(data.error || '生成失败');
-                    return;
-                }
-                document.getElementById('strategyCode').value = data.code || '';
-            } finally {
-                if (slowHintTimer) clearTimeout(slowHintTimer);
-                if (elapsedTimer) clearInterval(elapsedTimer);
-                button.disabled = false;
-                button.textContent = originalLabel;
-                statusText.textContent = originalStatusText;
-                editorLoadingText.textContent = originalEditorLoadingText;
-                editorMask.classList.remove('show');
-                status.classList.remove('show');
-            }
-        }
-
-        async function copyLlmContext() {
-            const prompt = document.getElementById('strategyPrompt').value.trim();
-            if (!prompt) {
-                alert('请先输入策略描述');
-                return;
-            }
-            const button = document.getElementById('copyPromptBtn');
-            const output = document.getElementById('llmContextOutput');
-            const originalLabel = button.textContent;
-            button.disabled = true;
-            button.textContent = '准备中...';
-            try {
-                const res = await fetch('/api/strategies/generate-context', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt }),
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    alert(data.error || '获取上下文失败');
-                    return;
-                }
-                const text = data.copy_text || '';
-                output.value = text;
-                output.style.display = 'block';
-                let copied = false;
-                if (navigator.clipboard && window.isSecureContext) {
+                async loadAll() {
                     try {
+                        const res = await fetch('/api/strategies');
+                        const data = await res.json();
+                        this.strategies = data.strategies || [];
+                        this.groups = data.groups || [];
+                        // 页码越界修正
+                        if (this.strategiesPage > this.totalPages(this.strategies)) this.strategiesPage = 1;
+                        if (this.groupsPage > this.totalPages(this.groups)) this.groupsPage = 1;
+                    } catch (e) {
+                        this.toast('加载失败，请刷新重试', 'error');
+                        console.error(e);
+                    }
+                },
+
+                async ensureContract() {
+                    if (this.contract) return;
+                    try {
+                        const res = await fetch('/api/strategy/contract');
+                        this.contract = await res.json();
+                    } catch (e) {
+                        console.warn('contract 加载失败', e);
+                    }
+                },
+
+                // ========== 视图与编辑器入口 ==========
+                openCreate() {
+                    if (this.view === 'groups') {
+                        this.openCreateGroup();
+                    } else {
+                        this.openCreateStrategy();
+                    }
+                },
+
+                openCreateStrategy() {
+                    this.view = 'strategies';
+                    this.editor = {
+                        kind: 'strategy',
+                        mode: 'create',
+                        originalId: null,
+                        form: {
+                            name: '',
+                            description: '',
+                            code: 'def run_strategy(context):\n    daily = context["snapshots"]["daily"]\n    if not daily.get("enough_data"):\n        return {"pass": False, "reason": "日线数据不足"}\n    return {\n        "pass": True,\n        "reason": "示例：命中所有股票",\n        "score": 50,\n    }\n',
+                            enabled: true,
+                            mode: 'ai',
+                            prompt: '',
+                            builtin: false,
+                        },
+                        error: null,
+                        saving: false,
+                        saved: null,
+                        lastGeneratedAt: 0,
+                    };
+                    this.ensureContract();
+                },
+
+                openEditStrategy(item) {
+                    this.view = 'strategies';
+                    this.editor = {
+                        kind: 'strategy',
+                        mode: 'edit',
+                        originalId: item.id,
+                        form: {
+                            name: item.name || '',
+                            description: item.description || '',
+                            code: item.code || '',
+                            enabled: !!item.enabled,
+                            mode: item.create_mode === 'ai' ? 'ai' : 'direct',
+                            prompt: '',
+                            builtin: item.create_mode === 'builtin',
+                        },
+                        error: null,
+                        saving: false,
+                        saved: null,
+                        lastGeneratedAt: 0,
+                    };
+                    this.ensureContract();
+                },
+
+                openCreateGroup() {
+                    this.view = 'groups';
+                    this.editor = {
+                        kind: 'group',
+                        mode: 'create',
+                        originalId: null,
+                        form: {
+                            name: '',
+                            description: '',
+                            match_mode: 'AND',
+                            strategy_ids: [],
+                        },
+                        error: null,
+                        saving: false,
+                        saved: null,
+                    };
+                },
+
+                openEditGroup(item) {
+                    this.view = 'groups';
+                    this.editor = {
+                        kind: 'group',
+                        mode: 'edit',
+                        originalId: item.id,
+                        form: {
+                            name: item.name || '',
+                            description: item.description || '',
+                            match_mode: (item.match_mode || 'AND').toUpperCase(),
+                            strategy_ids: [...(item.strategy_ids || (item.strategies || []).map(s => s.id))],
+                        },
+                        error: null,
+                        saving: false,
+                        saved: null,
+                    };
+                },
+
+                editorTitle() {
+                    if (!this.editor) return '';
+                    const map = {
+                        'strategy|create': '新建策略',
+                        'strategy|edit': '编辑策略',
+                        'group|create': '新建策略组',
+                        'group|edit': '编辑策略组',
+                    };
+                    return map[`${this.editor.kind}|${this.editor.mode}`] || '编辑';
+                },
+
+                maybeCloseEditor() {
+                    if (this.llm.running) {
+                        if (!confirm('AI 正在生成中，确定关闭？')) return;
+                        this.cancelGeneration();
+                    }
+                    if (this.editor && this.editor.saving) {
+                        return;  // 保存中不让关
+                    }
+                    this.editor = null;
+                    this.contractOpen = false;
+                },
+
+                closeSavedEditor() {
+                    this.editor = null;
+                    this.contractOpen = false;
+                },
+
+                runOnScreener() {
+                    if (!this.editor || !this.editor.saved) return;
+                    const { kind, id } = this.editor.saved;
+                    const params = new URLSearchParams();
+                    params.set('target_type', kind === 'group' ? 'group' : 'strategy');
+                    params.set('target_id', String(id));
+                    window.location.href = `/screener?${params.toString()}`;
+                },
+
+                toggleContract() {
+                    this.contractOpen = !this.contractOpen;
+                },
+
+                // ========== 提交 ==========
+                async submitEditor() {
+                    if (!this.editor) return;
+                    if (this.editor.kind === 'strategy') {
+                        await this.saveStrategy();
+                    } else {
+                        await this.saveGroup();
+                    }
+                },
+
+                async saveStrategy() {
+                    const f = this.editor.form;
+                    if (!f.name.trim()) {
+                        this.editor.error = '策略名称不能为空';
+                        return;
+                    }
+                    if (!f.code.trim()) {
+                        this.editor.error = '策略代码不能为空';
+                        return;
+                    }
+                    this.editor.error = null;
+                    this.editor.saving = true;
+                    try {
+                        const payload = {
+                            name: f.name.trim(),
+                            description: f.description.trim(),
+                            code: f.code,
+                            enabled: !!f.enabled,
+                            create_mode: f.mode === 'ai' ? 'ai' : 'direct',
+                        };
+                        const url = this.editor.mode === 'edit'
+                            ? `/api/strategies/${this.editor.originalId}`
+                            : '/api/strategies';
+                        const method = this.editor.mode === 'edit' ? 'PUT' : 'POST';
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.editor.error = data.error || '保存失败';
+                            return;
+                        }
+                        this.toast(this.editor.mode === 'edit' ? '策略已更新' : '策略已创建', 'success');
+                        const saved = data.strategy || {};
+                        const savedId = saved.id || this.editor.originalId;
+                        const savedName = saved.name || payload.name;
+                        await this.loadAll();
+                        if (this.editor) {
+                            this.editor.saved = {
+                                kind: 'strategy',
+                                id: savedId,
+                                name: savedName,
+                                enabled: !!f.enabled,
+                            };
+                        }
+                    } catch (e) {
+                        this.editor.error = '网络异常：' + (e.message || '未知');
+                    } finally {
+                        if (this.editor) this.editor.saving = false;
+                    }
+                },
+
+                async saveGroup() {
+                    const f = this.editor.form;
+                    if (!f.name.trim()) {
+                        this.editor.error = '策略组名称不能为空';
+                        return;
+                    }
+                    if (f.strategy_ids.length === 0) {
+                        this.editor.error = '至少选择一条策略';
+                        return;
+                    }
+                    this.editor.error = null;
+                    this.editor.saving = true;
+                    try {
+                        const payload = {
+                            name: f.name.trim(),
+                            description: f.description.trim(),
+                            match_mode: f.match_mode,
+                            strategy_ids: f.strategy_ids,
+                        };
+                        const url = this.editor.mode === 'edit'
+                            ? `/api/strategy-groups/${this.editor.originalId}`
+                            : '/api/strategy-groups';
+                        const method = this.editor.mode === 'edit' ? 'PUT' : 'POST';
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.editor.error = data.error || '保存失败';
+                            return;
+                        }
+                        this.toast(this.editor.mode === 'edit' ? '策略组已更新' : '策略组已创建', 'success');
+                        const saved = data.group || {};
+                        const savedId = saved.id || this.editor.originalId;
+                        const savedName = saved.name || payload.name;
+                        await this.loadAll();
+                        if (this.editor) {
+                            this.editor.saved = {
+                                kind: 'group',
+                                id: savedId,
+                                name: savedName,
+                            };
+                        }
+                    } catch (e) {
+                        this.editor.error = '网络异常：' + (e.message || '未知');
+                    } finally {
+                        if (this.editor) this.editor.saving = false;
+                    }
+                },
+
+                // ========== 删除 ==========
+                async deleteStrategy(item) {
+                    if (!confirm(`确定删除策略"${item.name}"？此操作不可恢复，引用它的策略组也会失效。`)) return;
+                    try {
+                        const res = await fetch(`/api/strategies/${item.id}`, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.toast(data.error || '删除失败', 'error');
+                            return;
+                        }
+                        this.toast('策略已删除', 'success');
+                        await this.loadAll();
+                    } catch (e) {
+                        this.toast('网络异常', 'error');
+                    }
+                },
+
+                async deleteGroup(item) {
+                    if (!confirm(`确定删除策略组"${item.name}"？`)) return;
+                    try {
+                        const res = await fetch(`/api/strategy-groups/${item.id}`, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.toast(data.error || '删除失败', 'error');
+                            return;
+                        }
+                        this.toast('策略组已删除', 'success');
+                        await this.loadAll();
+                    } catch (e) {
+                        this.toast('网络异常', 'error');
+                    }
+                },
+
+                // ========== LLM 生成 ==========
+                async generateCode() {
+                    if (!this.editor || this.editor.kind !== 'strategy') return;
+                    const prompt = (this.editor.form.prompt || '').trim();
+                    if (!prompt) return;
+
+                    this.editor.error = null;
+                    this.llm.running = true;
+                    this.llm.elapsed = 0;
+                    this.llm.controller = new AbortController();
+                    const startAt = Date.now();
+                    this.llm.timerId = setInterval(() => {
+                        this.llm.elapsed = Math.floor((Date.now() - startAt) / 1000);
+                    }, 1000);
+
+                    try {
+                        const res = await fetch('/api/strategies/generate-code', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ prompt }),
+                            signal: this.llm.controller.signal,
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.editor.error = data.error || 'AI 生成失败';
+                            return;
+                        }
+                        if (data.code) {
+                            this.editor.form.code = data.code;
+                            this.editor.lastGeneratedAt = Date.now();
+                            this.toast('代码已生成，可在下方微调后保存', 'success');
+                        }
+                    } catch (e) {
+                        if (e.name === 'AbortError') {
+                            this.toast('已取消生成', 'success');
+                        } else {
+                            this.editor.error = '生成失败：' + (e.message || '未知');
+                        }
+                    } finally {
+                        this.cleanupLlm();
+                    }
+                },
+
+                cancelGeneration() {
+                    if (this.llm.controller) {
+                        try { this.llm.controller.abort(); } catch (_) {}
+                    }
+                },
+
+                cleanupLlm() {
+                    if (this.llm.timerId) clearInterval(this.llm.timerId);
+                    this.llm.timerId = null;
+                    this.llm.controller = null;
+                    this.llm.running = false;
+                    this.llm.elapsed = 0;
+                },
+
+                async copyContext() {
+                    if (!this.editor || this.editor.kind !== 'strategy') return;
+                    const prompt = (this.editor.form.prompt || '').trim();
+                    if (!prompt) return;
+                    try {
+                        const res = await fetch('/api/strategies/generate-context', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ prompt }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.toast(data.error || '获取上下文失败', 'error');
+                            return;
+                        }
+                        await this.writeToClipboard(data.copy_text || '');
+                        this.toast('上下文已复制，可粘到外部模型', 'success');
+                    } catch (e) {
+                        this.toast('复制失败：' + (e.message || '未知'), 'error');
+                    }
+                },
+
+                async writeToClipboard(text) {
+                    if (navigator.clipboard && window.isSecureContext) {
                         await navigator.clipboard.writeText(text);
-                        copied = true;
-                    } catch (error) {}
-                }
-                if (!copied) {
-                    output.focus();
-                    output.select();
-                    try {
-                        copied = document.execCommand('copy');
-                    } catch (error) {}
-                }
-                if (copied) {
-                    alert('已复制 LLM 上下文，你可以粘贴到外部模型中生成策略代码。');
-                } else {
-                    output.focus();
-                    output.select();
-                    alert('当前浏览器不允许自动复制，已在下方展示完整上下文，请手动复制。');
-                }
-            } catch (error) {
-                alert('复制失败，请稍后重试');
-            } finally {
-                button.disabled = false;
-                button.textContent = originalLabel;
-            }
-        }
+                        return;
+                    }
+                    // 降级：隐藏 textarea + execCommand('copy')
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    try { document.execCommand('copy'); }
+                    finally { document.body.removeChild(ta); }
+                },
 
-        function editGroup(id) {
-            const item = groupData.find(g => g.id === id);
-            if (!item) return;
-            document.getElementById('groupId').value = item.id;
-            document.getElementById('groupName').value = item.name || '';
-            document.getElementById('groupDesc').value = item.description || '';
-            document.getElementById('groupMode').value = item.match_mode || 'AND';
-            renderGroupStrategyOptions(item.strategy_ids || []);
-            if (isMobileLayout()) {
-                openGroupEditor();
-            }
-        }
+                // ========== 成员选择 ==========
+                toggleStrategyMember(id, checked) {
+                    if (!this.editor || this.editor.kind !== 'group') return;
+                    const arr = this.editor.form.strategy_ids;
+                    const idx = arr.indexOf(id);
+                    if (checked && idx === -1) arr.push(id);
+                    if (!checked && idx !== -1) arr.splice(idx, 1);
+                },
 
-        function resetGroupForm() {
-            document.getElementById('groupId').value = '';
-            document.getElementById('groupName').value = '';
-            document.getElementById('groupDesc').value = '';
-            document.getElementById('groupMode').value = 'AND';
-            renderGroupStrategyOptions([]);
-        }
+                enabledStrategies() {
+                    return (this.strategies || []).filter(s => s.enabled);
+                },
 
-        async function saveGroup() {
-            const strategyIds = Array.from(document.querySelectorAll('#groupStrategyList input:checked')).map(el => Number(el.value));
-            const id = document.getElementById('groupId').value;
-            const payload = {
-                name: document.getElementById('groupName').value.trim(),
-                description: document.getElementById('groupDesc').value.trim(),
-                match_mode: document.getElementById('groupMode').value,
-                strategy_ids: strategyIds,
+                // ========== 工具函数 ==========
+                totalPages(list) {
+                    if (!list || list.length === 0) return 1;
+                    return Math.max(1, Math.ceil(list.length / this.PAGE_SIZE));
+                },
+
+                previewCode(code) {
+                    if (!code) return '';
+                    const lines = code.split('\n').slice(0, 5);
+                    return lines.join('\n');
+                },
+
+                toast(text, kind = 'success') {
+                    const id = ++this._toastSeq;
+                    this.toasts.push({ id, text, kind });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 2800);
+                },
             };
-            const url = id ? `/api/strategy-groups/${id}` : '/api/strategy-groups';
-            const method = id ? 'PUT' : 'POST';
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.error || '保存失败');
-                return;
-            }
-            resetGroupForm();
-            if (isMobileLayout()) {
-                closeEditorCard('groupEditorCard');
-            }
-            await loadAll();
         }
-
-        async function deleteGroup(id) {
-            if (!confirm('确定删除这个策略组吗？')) return;
-            const res = await fetch(`/api/strategy-groups/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.error || '删除失败');
-                return;
-            }
-            await loadAll();
-        }
-
-        async function loadAll() {
-            const res = await fetch('/api/strategies');
-            const data = await res.json();
-            strategyData = data.strategies || [];
-            groupData = data.groups || [];
-            renderStrategies();
-            renderGroups();
-            renderGroupStrategyOptions([]);
-        }
-
-        (async function init() {
-            switchStrategyMode();
-            await loadAll();
-        })();
-
-        window.addEventListener('resize', () => {
-            if (!isMobileLayout()) {
-                closeAllMobileLayers();
-                document.body.style.overflow = '';
-            }
-        });
     </script>
 </body>
 </html>
