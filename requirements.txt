@@ -6,3 +6,4 @@ pandas==2.2.1
 numpy==1.26.4
 httpx==0.27.0
 python-multipart==0.0.9
+PyMySQL==1.1.1

@@ -16,17 +16,16 @@ import asyncio
 import threading
 import time
 from time import sleep
-import sqlite3
+import db.compat as sqlite3
 import os
 import hashlib
 import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+from db.schema import init_db as initialize_app_db
+from db.schema import init_vt_db as initialize_vt_db
 
 from strategy_engine import (
-    DEFAULT_STRATEGY_CODE,
-    DEFAULT_STRATEGY_DESCRIPTION,
-    DEFAULT_STRATEGY_NAME,
     build_strategy_context,
     get_strategy_contract,
     run_strategy_code,
@@ -38,97 +37,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LEGACY_DB_PATH = "/root/.openclaw/workspace/stock-ai/screening.db"
 DEFAULT_DB_PATH = os.path.join(BASE_DIR, "screening.db")
 DB_PATH = os.getenv(
-    "STOCK_AI_DB_PATH",
-    LEGACY_DB_PATH if os.path.isdir(os.path.dirname(LEGACY_DB_PATH)) else DEFAULT_DB_PATH,
+    "STOCK_AI_DB_URL",
+    os.getenv(
+        "STOCK_AI_DB_PATH",
+        LEGACY_DB_PATH if os.path.isdir(os.path.dirname(LEGACY_DB_PATH)) else DEFAULT_DB_PATH,
+    ),
 )
 SCREENING_MAX_WORKERS = max(4, min(24, int(os.getenv("SCREENING_MAX_WORKERS", "12"))))
 SCREENING_SUBMIT_BATCH = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "200")))
 SCREENING_SAVE_INTERVAL = max(10, int(os.getenv("SCREENING_SAVE_INTERVAL", "25")))
-
-
-def ensure_column(cursor, table_name, column_name, column_sql):
-    columns = [row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()]
-    if column_name not in columns:
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
-
-# 初始化数据库
-def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS screening_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_date TEXT,
-        run_time TEXT,
-        stock_code TEXT,
-        stock_name TEXT,
-        daily_condition TEXT,
-        weekly_condition TEXT,
-        current_volume REAL,
-        max_volume_3m REAL,
-        dif REAL,
-        dea REAL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS screening_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_date TEXT,
-        run_time TEXT,
-        total_stocks INTEGER,
-        matched_count INTEGER,
-        status TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    ensure_column(c, "screening_results", "target_type", "TEXT")
-    ensure_column(c, "screening_results", "target_id", "INTEGER")
-    ensure_column(c, "screening_results", "target_name", "TEXT")
-    ensure_column(c, "screening_results", "matched_strategies", "TEXT")
-    ensure_column(c, "screening_results", "result_payload", "TEXT")
-    ensure_column(c, "screening_results", "score", "REAL DEFAULT 0")
-    ensure_column(c, "screening_runs", "target_type", "TEXT")
-    ensure_column(c, "screening_runs", "target_id", "INTEGER")
-    ensure_column(c, "screening_runs", "target_name", "TEXT")
-    ensure_column(c, "screening_runs", "target_logic", "TEXT")
-    c.execute('''CREATE TABLE IF NOT EXISTS strategy_definitions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT DEFAULT '',
-        code TEXT NOT NULL,
-        enabled INTEGER DEFAULT 1,
-        create_mode TEXT DEFAULT 'direct',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS strategy_groups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT DEFAULT '',
-        match_mode TEXT DEFAULT 'AND',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS strategy_group_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id INTEGER NOT NULL,
-        strategy_id INTEGER NOT NULL,
-        sort_order INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(group_id, strategy_id),
-        FOREIGN KEY (group_id) REFERENCES strategy_groups(id),
-        FOREIGN KEY (strategy_id) REFERENCES strategy_definitions(id)
-    )''')
-    c.execute("CREATE INDEX IF NOT EXISTS idx_screening_runs_target ON screening_runs(target_type, target_id, created_at)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_screening_results_target ON screening_results(target_type, target_id, run_date, run_time)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_strategy_group_items_group ON strategy_group_items(group_id, sort_order)")
-    c.execute("SELECT id FROM strategy_definitions WHERE name = ?", (DEFAULT_STRATEGY_NAME,))
-    if not c.fetchone():
-        c.execute(
-            """INSERT INTO strategy_definitions (name, description, code, enabled, create_mode)
-               VALUES (?, ?, ?, 1, 'builtin')""",
-            (DEFAULT_STRATEGY_NAME, DEFAULT_STRATEGY_DESCRIPTION, DEFAULT_STRATEGY_CODE),
-        )
-    conn.commit()
-    conn.close()
 
 def save_screening_run(run_date, run_time, total_stocks, matched_count, status, results, target_info=None):
     conn = sqlite3.connect(DB_PATH)
@@ -697,58 +614,7 @@ def hash_password(pwd: str) -> str:
 
 def make_session_token() -> str:
     return secrets.token_hex(32)
-
-def init_vt_db():
-    """初始化虚拟炒股数据库"""
-    conn = sqlite3.connect(VT_DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS vt_users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        is_admin INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS vt_accounts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        account_name TEXT NOT NULL,
-        balance REAL DEFAULT 500000.0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES vt_users(id)
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS vt_positions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        stock_code TEXT NOT NULL,
-        stock_name TEXT NOT NULL,
-        shares INTEGER NOT NULL,
-        avg_cost REAL NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(account_id, stock_code),
-        FOREIGN KEY (account_id) REFERENCES vt_accounts(id)
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS vt_trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        stock_code TEXT NOT NULL,
-        stock_name TEXT NOT NULL,
-        trade_type TEXT NOT NULL,
-        shares INTEGER NOT NULL,
-        price REAL NOT NULL,
-        total_amount REAL NOT NULL,
-        commission REAL DEFAULT 0,
-        traded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (account_id) REFERENCES vt_accounts(id)
-    )''')
-    # 创建默认管理员
-    c.execute("SELECT id FROM vt_users WHERE username='admin' AND is_admin=1")
-    if not c.fetchone():
-        c.execute("INSERT INTO vt_users (username, password, is_admin) VALUES ('admin', ?, 1)", (hash_password("admin"),))
-    conn.commit()
-    conn.close()
-
-init_vt_db()
+initialize_vt_db(VT_DB_PATH)
 
 # ---- 用户认证 ----
 def create_user(username: str, password: str) -> dict:
@@ -1090,7 +956,7 @@ def get_account_detail(account_id: int) -> dict:
 
 
 # 初始化数据库
-init_db()
+initialize_app_db(DB_PATH)
 
 # 选股结果缓存（内存）
 SCREENING_RESULT = {
@@ -1460,13 +1326,16 @@ def cleanup_old_data():
     """清理7天前的选股数据"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # 删除7天前的运行记录
-    c.execute("DELETE FROM screening_results WHERE run_date < date('now', '-7 days')")
-    c.execute("DELETE FROM screening_runs WHERE run_date < date('now', '-7 days')")
-    
+
+    if sqlite3.is_mysql_target(DB_PATH):
+        c.execute("DELETE FROM screening_results WHERE STR_TO_DATE(run_date, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")
+        c.execute("DELETE FROM screening_runs WHERE STR_TO_DATE(run_date, '%Y-%m-%d') < DATE_SUB(CURDATE(), INTERVAL 7 DAY)")
+    else:
+        c.execute("DELETE FROM screening_results WHERE run_date < date('now', '-7 days')")
+        c.execute("DELETE FROM screening_runs WHERE run_date < date('now', '-7 days')")
+
     conn.commit()
-    deleted_results = c.total_changes
+    deleted_results = getattr(c, "rowcount", 0)
     conn.close()
     
     print(f"[清理] 已删除 {deleted_results} 条7天前的选股记录")
