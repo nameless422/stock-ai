@@ -5,6 +5,7 @@
 
 import pandas as pd
 import numpy as np
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Form, HTTPException, Cookie, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -15,6 +16,7 @@ import json
 import asyncio
 import threading
 import time
+from collections import Counter
 from time import sleep
 import db.compat as sqlite3
 import os
@@ -35,7 +37,31 @@ from strategy_engine import (
     run_strategy_code,
 )
 
-app = FastAPI(title="股票K线AI分析", description="A股实时数据 + K线图 + AI决策建议")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
+    timeout = httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=5.0)
+    app.state.market_http_client = httpx.AsyncClient(
+        timeout=timeout,
+        limits=limits,
+        headers={"User-Agent": "stock-ai/1.0"},
+        follow_redirects=True,
+    )
+    try:
+        yield
+    finally:
+        client = app.state.market_http_client
+        app.state.market_http_client = None
+        if client is not None:
+            await client.aclose()
+
+
+app = FastAPI(
+    title="股票K线AI分析",
+    description="A股实时数据 + K线图 + AI决策建议",
+    lifespan=lifespan,
+)
+app.state.market_http_client = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LEGACY_DB_PATH = "/root/.openclaw/workspace/stock-ai/screening.db"
@@ -58,7 +84,36 @@ MARKET_PERIOD_CONFIG = {
     "monthly": {"period_key": "month", "payload_key": "qfqmonth", "default_bars": 180, "eastmoney_klt": "103"},
 }
 MARKET_SYNC_LOCK = threading.Lock()
+MARKET_CACHE: dict = {}
+MARKET_CACHE_LOCK = threading.Lock()
+STOCK_INFO_TTL = float(os.getenv("STOCK_INFO_TTL", "5"))
+KLINE_TTL = float(os.getenv("KLINE_TTL", "20"))
+SEARCH_TTL = float(os.getenv("SEARCH_TTL", "15"))
 
+
+def _cache_get(cache_key):
+    now = time.monotonic()
+    with MARKET_CACHE_LOCK:
+        item = MARKET_CACHE.get(cache_key)
+        if not item:
+            return None
+        expires_at, payload = item
+        if expires_at <= now:
+            MARKET_CACHE.pop(cache_key, None)
+            return None
+        return payload
+
+
+def _cache_set(cache_key, payload, ttl_seconds):
+    with MARKET_CACHE_LOCK:
+        MARKET_CACHE[cache_key] = (time.monotonic() + ttl_seconds, payload)
+
+
+def _get_async_market_client() -> httpx.AsyncClient:
+    client = app.state.market_http_client
+    if client is None:
+        raise RuntimeError("market http client not initialized")
+    return client
 def save_screening_run(run_token, run_date, run_time, total_stocks, matched_count, status, results, target_info=None, failure_summary=""):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -971,7 +1026,6 @@ TASK_MANAGER.register_handler(
 )
 TASK_MANAGER.start()
 
-
 def enqueue_screening_task(target_type: Optional[str] = None, target_id: Optional[int] = None, source: str = "manual") -> dict:
     requested_target_type = target_type or "strategy"
     requested_target_id = int(target_id) if target_id is not None else None
@@ -1275,7 +1329,6 @@ def sync_market_cache_for_all_stocks() -> dict:
     finally:
         MARKET_SYNC_LOCK.release()
 
-
 def scheduled_screening():
     """定时选股任务（每天7:00执行）"""
     while True:
@@ -1351,55 +1404,107 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ========== 股票数据接口 ==========
 
+def _stock_code_to_market_symbol(stock_code: str) -> str:
+    if stock_code.startswith("6"):
+        return f"sh{stock_code}"
+    if stock_code.startswith(("0", "3")):
+        return f"sz{stock_code}"
+    return f"bj{stock_code}"
+
+
+def _parse_stock_info_payload(stock_code: str, text: str) -> dict:
+    start = text.find('"') + 1
+    end = text.find('"', start)
+    data = text[start:end].split(',')
+
+    if len(data) < 32:
+        return {"error": "股票代码不存在或已退市"}
+
+    name = data[0]
+    open_price = float(data[1]) if data[1] else 0
+    close_prev = float(data[2]) if data[2] else 0
+    current = float(data[3]) if data[3] else 0
+    high = float(data[4]) if data[4] else 0
+    low = float(data[5]) if data[5] else 0
+    volume = float(data[8]) if data[8] else 0
+    amount = float(data[9]) if data[9] else 0
+    change = ((current - close_prev) / close_prev * 100) if close_prev else 0
+
+    return {
+        "code": stock_code,
+        "name": name if name else "",
+        "price": current,
+        "change": round(change, 2),
+        "change_amount": round(current - close_prev, 2),
+        "open": open_price,
+        "high": high,
+        "low": low,
+        "volume": volume,
+        "amount": amount,
+        "close_prev": close_prev,
+    }
+
+
+def _parse_kline_payload(symbol: str, period: str, text: str) -> dict:
+    period_map = {
+        "daily": ("day", "qfqday"),
+        "weekly": ("week", "qfqweek"),
+        "monthly": ("month", "qfqmonth"),
+    }
+    _, qfq_key = period_map.get(period, ("day", "qfqday"))
+
+    json_start = text.find('=') + 1
+    data = json.loads(text[json_start:])
+
+    if data.get("code") != 0:
+        return {"error": "获取K线数据失败"}
+
+    stock_data = data.get("data", {}).get(symbol, {})
+    klines = stock_data.get(qfq_key, [])
+    if not klines:
+        return {"error": "暂无数据"}
+
+    klines = klines[-180:]
+    dates, opens, closes, highs, lows, volumes = [], [], [], [], [], []
+
+    for item in klines:
+        if len(item) >= 6:
+            dates.append(item[0])
+            opens.append(float(item[1]))
+            closes.append(float(item[2]))
+            highs.append(float(item[3]))
+            lows.append(float(item[4]))
+            volumes.append(float(item[5]))
+
+    return {
+        "dates": dates,
+        "open": opens,
+        "close": closes,
+        "high": highs,
+        "low": lows,
+        "volume": volumes,
+        "amount": [0] * len(dates),
+    }
+
+
 def get_stock_info(stock_code: str) -> dict:
     """获取股票基本信息（新浪财经API）"""
+    cache_key = ("stock_info", stock_code)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        if stock_code.startswith("6"):
-            symbol = f"sh{stock_code}"
-        elif stock_code.startswith("0") or stock_code.startswith("3"):
-            symbol = f"sz{stock_code}"
-        else:
-            symbol = f"bj{stock_code}"
-        
+        symbol = _stock_code_to_market_symbol(stock_code)
         url = f"https://hq.sinajs.cn/list={symbol}"
         headers = {"Referer": "https://finance.sina.com.cn"}
-        
+
         with httpx.Client(timeout=10) as client:
             resp = client.get(url, headers=headers)
             text = resp.text
-        
-        # 解析: var hq_str_sh600519="茅台,1459.54,1459.88,1460.00,..."
-        start = text.find('"') + 1
-        end = text.find('"', start)
-        data = text[start:end].split(',')
-        
-        if len(data) < 32:
-            return {"error": "股票代码不存在或已退市"}
-        
-        name = data[0]
-        open_price = float(data[1]) if data[1] else 0
-        close_prev = float(data[2]) if data[2] else 0
-        current = float(data[3]) if data[3] else 0
-        high = float(data[4]) if data[4] else 0
-        low = float(data[5]) if data[5] else 0
-        volume = float(data[8]) if data[8] else 0  # 成交量(股)
-        amount = float(data[9]) if data[9] else 0  # 成交额(元)
-        
-        change = ((current - close_prev) / close_prev * 100) if close_prev else 0
-        
-        return {
-            "code": stock_code,
-            "name": name if name else "",
-            "price": current,
-            "change": round(change, 2),
-            "change_amount": round(current - close_prev, 2),
-            "open": open_price,
-            "high": high,
-            "low": low,
-            "volume": volume,
-            "amount": amount,
-            "close_prev": close_prev,
-        }
+
+        result = _parse_stock_info_payload(stock_code, text)
+        _cache_set(cache_key, result, STOCK_INFO_TTL)
+        return result
     except Exception as e:
         return {"error": str(e)}
 
@@ -1409,6 +1514,10 @@ def get_kline_data(stock_code: str, period: str = "daily", adjust: str = "qfq") 
     获取K线数据
     period: daily / weekly / monthly
     """
+    cache_key = ("kline", stock_code, period, adjust)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     try:
         klines = get_kline_rows(stock_code, period=period, bars=180, adjust=adjust)
         if not klines:
@@ -1426,7 +1535,7 @@ def get_kline_data(stock_code: str, period: str = "daily", adjust: str = "qfq") 
                 lows.append(float(item[4]))
                 volumes.append(float(item[5]))
         
-        return {
+        result = {
             "dates": dates,
             "open": opens,
             "close": closes,
@@ -1435,8 +1544,74 @@ def get_kline_data(stock_code: str, period: str = "daily", adjust: str = "qfq") 
             "volume": volumes,
             "amount": [0] * len(dates),
         }
+        _cache_set(cache_key, result, KLINE_TTL)
+        return result
     except Exception as e:
         return {"error": str(e)}
+
+
+async def get_stock_info_async(stock_code: str) -> dict:
+    cache_key = ("stock_info", stock_code)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        symbol = _stock_code_to_market_symbol(stock_code)
+        url = f"https://hq.sinajs.cn/list={symbol}"
+        headers = {"Referer": "https://finance.sina.com.cn"}
+        client = _get_async_market_client()
+        resp = await client.get(url, headers=headers)
+        text = resp.text
+        result = _parse_stock_info_payload(stock_code, text)
+        _cache_set(cache_key, result, STOCK_INFO_TTL)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def get_kline_data_async(stock_code: str, period: str = "daily", adjust: str = "qfq") -> dict:
+    cache_key = ("kline", stock_code, period, adjust)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        return await asyncio.to_thread(get_kline_data, stock_code, period, adjust)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def search_stock_async(keyword: str) -> dict:
+    cache_key = ("search", keyword)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        url = f"https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15,16,17,18,19,110&key={keyword}&limit=10"
+        headers = {"Referer": "https://finance.sina.com.cn"}
+        client = _get_async_market_client()
+        resp = await client.get(url, headers=headers)
+        text = resp.text
+
+        start = text.find('"') + 1
+        end = text.find('"', start)
+        data = text[start:end]
+
+        results = []
+        for item in data.split(';'):
+            parts = item.split(',')
+            if len(parts) >= 4:
+                results.append({
+                    "code": parts[1],
+                    "name": parts[0],
+                    "price": 0,
+                    "change": 0,
+                })
+
+        payload = {"results": results[:10]}
+        _cache_set(cache_key, payload, SEARCH_TTL)
+        return payload
+    except Exception as e:
+        return {"error": str(e), "results": []}
 
 
 def calculate_indicators(kline_data: dict) -> dict:
@@ -1656,7 +1831,7 @@ def ai_analyze(stock_code: str, stock_name: str, kline_data: dict, indicators: d
 # ========== API 路由 ==========
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+def index():
     """主页"""
     with open("templates/index.html", "r", encoding="utf-8") as f:
         content = f.read()
@@ -1666,19 +1841,19 @@ async def index():
 @app.get("/api/stock/{stock_code}")
 async def get_stock(stock_code: str):
     """获取股票基本信息"""
-    return get_stock_info(stock_code)
+    return await get_stock_info_async(stock_code)
 
 
 @app.get("/api/kline/{stock_code}")
 async def get_kline(stock_code: str, period: str = "daily"):
     """获取K线数据"""
-    return get_kline_data(stock_code, period)
+    return await get_kline_data_async(stock_code, period)
 
 
 @app.get("/api/indicators/{stock_code}")
 async def get_indicators(stock_code: str, period: str = "daily"):
     """获取技术指标"""
-    kline = get_kline_data(stock_code, period)
+    kline = await get_kline_data_async(stock_code, period)
     if "error" in kline:
         return kline
     return calculate_indicators(kline)
@@ -1687,18 +1862,18 @@ async def get_indicators(stock_code: str, period: str = "daily"):
 @app.get("/api/analyze/{stock_code}")
 async def analyze_stock(stock_code: str, period: str = "daily"):
     """AI分析股票"""
-    info = get_stock_info(stock_code)
+    info, kline = await asyncio.gather(
+        get_stock_info_async(stock_code),
+        get_kline_data_async(stock_code, period),
+    )
     if "error" in info:
         return info
-    
-    kline = get_kline_data(stock_code, period)
     if "error" in kline:
         return kline
-    
+
     indicators = calculate_indicators(kline)
-    
     ai_result = ai_analyze(stock_code, info.get("name", ""), kline, indicators)
-    
+
     return {
         "stock_info": info,
         "latest_price": kline['close'][-1] if kline.get('close') else 0,
@@ -1710,50 +1885,40 @@ async def analyze_stock(stock_code: str, period: str = "daily"):
 @app.get("/api/search")
 async def search_stock(keyword: str):
     """搜索股票"""
-    try:
-        # 新浪搜索建议
-        url = f"https://suggest3.sinajs.cn/suggest/type=11,12,13,14,15,16,17,18,19,110&key={keyword}&limit=10"
-        headers = {"Referer": "https://finance.sina.com.cn"}
-        
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(url, headers=headers)
-            text = resp.text
-        
-        # 解析: var suggestresult_11_12_13_14_15_16_17_18_19_110="..."
-        start = text.find('"') + 1
-        end = text.find('"', start)
-        data = text[start:end]
-        
-        results = []
-        for item in data.split(';'):
-            parts = item.split(',')
-            if len(parts) >= 4:
-                results.append({
-                    "code": parts[1],
-                    "name": parts[0],
-                    "price": 0,
-                    "change": 0
-                })
-        
-        return {"results": results[:10]}
-    except Exception as e:
-        return {"error": str(e), "results": []}
+    return await search_stock_async(keyword)
+
+
+@app.get("/api/quote/{stock_code}")
+async def get_quote_bundle(stock_code: str, period: str = "daily"):
+    """首屏合并接口，减少重复远端请求"""
+    info, kline = await asyncio.gather(
+        get_stock_info_async(stock_code),
+        get_kline_data_async(stock_code, period),
+    )
+    if "error" in info:
+        return info
+    if "error" in kline:
+        return kline
+
+    return {
+        "stock_info": info,
+        "kline": kline,
+        "indicators": calculate_indicators(kline),
+    }
 
 
 # ========== 选股 API ==========
 
 @app.get("/screener", response_class=HTMLResponse)
-async def screener_page(request: Request):
-    """选股结果页面"""
-    user_agent = request.headers.get("user-agent", "")
-    template_name = "templates/screener_mobile.html" if is_mobile_user_agent(user_agent) else "templates/screener.html"
-    with open(template_name, "r", encoding="utf-8") as f:
+def screener_page():
+    """选股结果页面（响应式单模板，桌面/移动共用）"""
+    with open("templates/screener.html", "r", encoding="utf-8") as f:
         content = f.read()
     return HTMLResponse(content=content, status_code=200)
 
 
 @app.get("/strategies", response_class=HTMLResponse)
-async def strategies_page(request: Request):
+def strategies_page(request: Request):
     """策略管理页面"""
     user_agent = request.headers.get("user-agent", "")
     template_name = "templates/strategies_mobile.html" if is_mobile_user_agent(user_agent) else "templates/strategies.html"
@@ -1962,6 +2127,42 @@ async def screener_status(target_type: Optional[str] = None, target_id: Optional
             "error": task.get("error_text", ""),
         }
 
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    sql = "SELECT * FROM screening_runs WHERE 1 = 1"
+    params = []
+    if target_type:
+        sql += " AND target_type = ?"
+        params.append(target_type)
+    if target_id is not None:
+        sql += " AND target_id = ?"
+        params.append(target_id)
+    sql += " ORDER BY created_at DESC LIMIT 1"
+    run_info = c.execute(sql, params).fetchone()
+    conn.close()
+    if run_info:
+        run_info = dict(run_info)
+        return {
+            "running": False,
+            "queued": False,
+            "task_id": None,
+            "run_token": run_info.get("run_token", ""),
+            "time": f"{run_info['run_date']} {run_info['run_time']}",
+            "total_stocks": run_info.get('total_stocks', 0),
+            "processed": run_info.get('total_stocks', 0),
+            "matched_count": run_info.get('matched_count', 0),
+            "target_type": run_info.get("target_type"),
+            "target_id": run_info.get("target_id"),
+            "target_name": run_info.get("target_name"),
+            "status": run_info.get("status"),
+            "progress_message": "",
+            "failure_summary": run_info.get("failure_summary", ""),
+            "ai_summary": "",
+            "raw_miss_log_count": 0,
+            "error": "",
+        }
+
     return {
         "running": False,
         "queued": False,
@@ -1974,12 +2175,12 @@ async def screener_status(target_type: Optional[str] = None, target_id: Optional
         "target_id": target_id,
         "target_name": "",
         "status": "",
-            "progress_message": "",
-            "failure_summary": "",
-            "ai_summary": "",
-            "raw_miss_log_count": 0,
-            "error": "",
-        }
+        "progress_message": "",
+        "failure_summary": "",
+        "ai_summary": "",
+        "raw_miss_log_count": 0,
+        "error": "",
+    }
 
 
 @app.get("/api/tasks")
@@ -2062,6 +2263,7 @@ async def get_screener_results(target_type: Optional[str] = None, target_id: Opt
         conn.close()
         return {"results": [], "time": "", "total": 0, "matched_count": 0, "failure_summary": ""}
 
+    latest = dict(latest)
     run_date = latest['run_date']
     run_time = latest['run_time']
     run_token = latest.get("run_token", "")
@@ -2145,20 +2347,21 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
 
     history = []
     for r in rows:
+        item = dict(r)
         history.append({
-            "run_token": r.get("run_token", ""),
-            "run_date": r['run_date'],
-            "run_time": r['run_time'],
-            "target_type": r['target_type'],
-            "target_id": r['target_id'],
-            "target_name": r['target_name'],
-            "target_logic": r['target_logic'],
-            "total_stocks": r['total_stocks'],
-            "matched_count": r['matched_count'],
-            "status": r['status'],
-            "failure_summary": r.get("failure_summary", ""),
-            "ai_summary": latest_task_result.get("ai_summary", "") if r.get("run_token", "") == (latest_task or {}).get("run_token", "") else "",
-            "raw_miss_log_count": int(latest_task_result.get("raw_miss_log_count") or 0) if r.get("run_token", "") == (latest_task or {}).get("run_token", "") else 0,
+            "run_token": item.get("run_token", ""),
+            "run_date": item['run_date'],
+            "run_time": item['run_time'],
+            "target_type": item['target_type'],
+            "target_id": item['target_id'],
+            "target_name": item['target_name'],
+            "target_logic": item['target_logic'],
+            "total_stocks": item['total_stocks'],
+            "matched_count": item['matched_count'],
+            "status": item['status'],
+            "failure_summary": item.get("failure_summary", ""),
+            "ai_summary": latest_task_result.get("ai_summary", "") if item.get("run_token", "") == (latest_task or {}).get("run_token", "") else "",
+            "raw_miss_log_count": int(latest_task_result.get("raw_miss_log_count") or 0) if item.get("run_token", "") == (latest_task or {}).get("run_token", "") else 0,
         })
 
     conn.close()
