@@ -193,6 +193,9 @@ def init_db(db_target):
     create_mysql_index(c, "strategy_group_items", "idx_strategy_group_items_group", "group_id, sort_order")
     create_mysql_index(c, "market_kline_cache", "idx_market_kline_cache_lookup", "stock_code, period, adjust_type")
     create_mysql_index(c, "task_jobs", "idx_task_jobs_status_priority", "status, priority, id")
+    create_mysql_index(c, "task_jobs", "idx_task_jobs_type_target_recent", "task_type, target_type, target_id, id")
+    create_mysql_index(c, "task_jobs", "idx_task_jobs_type_queue_status_priority", "task_type, queue_name, status, priority, id")
+    create_mysql_index(c, "task_jobs", "idx_task_jobs_type_recent", "task_type, id")
     create_mysql_index(c, "task_logs", "idx_task_logs_task_id", "task_id, id")
     c.execute("SELECT id FROM strategy_definitions WHERE name = ?", (DEFAULT_STRATEGY_NAME,))
     if not c.fetchone():
@@ -219,4 +222,8 @@ def create_mysql_index(cursor, table_name, index_name, columns_sql):
         (table_name, index_name),
     ).fetchone()
     if row and row[0] == 0:
-        cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns_sql})")
+        try:
+            cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({columns_sql})")
+        except Exception as exc:
+            if "Duplicate key name" not in str(exc):
+                raise

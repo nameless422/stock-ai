@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>策略选股 · Stock AI</title>
-    <link rel="stylesheet" href="/static/base.css">
+    <link rel="stylesheet" href="/static/base.css?v=20260417">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
     <style>
         /* ---------- 页面级样式（复用 base.css tokens） ---------- */
@@ -39,6 +39,58 @@
             grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto auto;
             gap: var(--sp-3);
             align-items: center;
+        }
+        .toolbar-picker-btn {
+            width: 100%;
+            min-height: 52px;
+            padding: 10px 14px;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-color: var(--border);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+                var(--bg-elev);
+        }
+        .toolbar-picker-btn:hover {
+            border-color: var(--border-strong);
+            background:
+                linear-gradient(180deg, rgba(91, 141, 239, 0.06), rgba(91, 141, 239, 0)),
+                var(--card-hover);
+        }
+        .toolbar-picker-main {
+            flex: 1;
+            min-width: 0;
+            text-align: left;
+        }
+        .toolbar-picker-label {
+            font-size: 11px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .toolbar-picker-value {
+            margin-top: 4px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-1);
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.45;
+        }
+        .toolbar-picker-meta {
+            margin-top: 2px;
+            font-size: 12px;
+            color: var(--text-2);
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.45;
+        }
+        .toolbar-picker-arrow {
+            flex: none;
+            color: var(--text-3);
+            font-size: 16px;
+            line-height: 1;
+            margin-top: 4px;
         }
         .toolbar-card {
             position: relative;
@@ -113,13 +165,307 @@
             70% { box-shadow: 0 0 0 10px rgba(91, 141, 239, 0); }
             100% { box-shadow: 0 0 0 0 rgba(91, 141, 239, 0); }
         }
+        @media (max-width: 1080px) {
+            .toolbar {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            }
+            .toolbar > .btn-primary,
+            .toolbar > .md-only {
+                grid-column: span 2;
+            }
+        }
         @media (max-width: 720px) {
             .toolbar {
                 grid-template-columns: 1fr 1fr;
             }
             .toolbar > .btn { grid-column: span 1; }
+            .toolbar > .btn-primary {
+                grid-column: span 2;
+            }
+            .toolbar-picker-btn {
+                min-height: 64px;
+            }
             .guide-banner {
                 flex-direction: column;
+            }
+        }
+        @media (max-width: 560px) {
+            .toolbar {
+                grid-template-columns: 1fr;
+            }
+            .toolbar > .btn,
+            .toolbar > .btn-primary,
+            .toolbar > .md-only {
+                grid-column: span 1;
+            }
+        }
+
+        /* 目标选择弹窗 */
+        .picker-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            background: rgba(4, 10, 18, 0.68);
+            backdrop-filter: blur(8px);
+        }
+        .picker-shell {
+            position: fixed;
+            inset: 0;
+            z-index: 70;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--sp-5);
+        }
+        .picker-panel {
+            width: min(100%, 760px);
+            max-height: min(88vh, 860px);
+            display: flex;
+            flex-direction: column;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(91, 141, 239, 0.18);
+            background:
+                radial-gradient(circle at top right, rgba(91, 141, 239, 0.14), transparent 28%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+                var(--card);
+            box-shadow: var(--shadow-lg);
+        }
+        .picker-header {
+            padding: var(--sp-5);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-4);
+        }
+        .picker-breadcrumb {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: var(--text-3);
+        }
+        .picker-back-btn {
+            padding: 0;
+            min-width: 24px;
+            min-height: 24px;
+            border: 0;
+            background: transparent;
+            color: var(--text-2);
+            font-size: 16px;
+        }
+        .picker-close-btn {
+            min-width: 36px;
+            min-height: 36px;
+            border-radius: 50%;
+            padding: 0;
+        }
+        .picker-subtitle {
+            margin-top: 6px;
+            font-size: 12px;
+            line-height: 1.7;
+            color: var(--text-2);
+            max-width: 480px;
+        }
+        .picker-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--sp-5);
+        }
+        .picker-footer {
+            padding: var(--sp-4) var(--sp-5);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            flex-wrap: wrap;
+            background: rgba(11, 18, 32, 0.36);
+        }
+        .picker-type-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--sp-4);
+        }
+        .picker-type-card {
+            padding: var(--sp-4);
+            border-radius: 18px;
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+            cursor: pointer;
+            transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+        }
+        .picker-type-card:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+            background: var(--card-hover);
+        }
+        .picker-type-card.is-active {
+            border-color: rgba(91, 141, 239, 0.42);
+            background: linear-gradient(180deg, rgba(91, 141, 239, 0.12), rgba(91, 141, 239, 0.03));
+            box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.12);
+        }
+        .picker-type-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .picker-type-desc {
+            margin-top: 8px;
+            font-size: 12px;
+            line-height: 1.7;
+            color: var(--text-2);
+        }
+        .picker-type-meta {
+            margin-top: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-3);
+            font-size: 11px;
+        }
+        .picker-summary {
+            margin-bottom: var(--sp-4);
+            padding: var(--sp-4);
+            border-radius: 18px;
+            border: 1px solid rgba(91, 141, 239, 0.18);
+            background:
+                linear-gradient(135deg, rgba(91, 141, 239, 0.1), rgba(91, 141, 239, 0.02)),
+                var(--bg-elev);
+        }
+        .picker-summary-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-3);
+        }
+        .picker-summary-name {
+            margin-top: 6px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .picker-summary-meta {
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .picker-search-row {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-4);
+            flex-wrap: wrap;
+        }
+        .picker-search-row .input {
+            flex: 1;
+            min-width: min(100%, 240px);
+        }
+        .picker-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-3);
+        }
+        .picker-item {
+            padding: var(--sp-4);
+            border-radius: 18px;
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+            cursor: pointer;
+            transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+        }
+        .picker-item:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+            background: var(--card-hover);
+        }
+        .picker-item.is-selected {
+            border-color: rgba(91, 141, 239, 0.46);
+            background: linear-gradient(180deg, rgba(91, 141, 239, 0.12), rgba(91, 141, 239, 0.03));
+            box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.12);
+        }
+        .picker-item-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--sp-3);
+        }
+        .picker-item-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .picker-item-desc {
+            margin-top: 8px;
+            font-size: 12px;
+            line-height: 1.7;
+            color: var(--text-2);
+        }
+        .picker-item-extra {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .picker-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-2);
+            font-size: 11px;
+        }
+        .picker-count {
+            flex: none;
+            min-width: 54px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(91, 141, 239, 0.12);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+        }
+        .picker-empty {
+            padding: var(--sp-6) var(--sp-4);
+            border: 1px dashed var(--border);
+            border-radius: 18px;
+            text-align: center;
+            color: var(--text-3);
+        }
+        .picker-footer-meta {
+            font-size: 12px;
+            color: var(--text-3);
+        }
+        @media (max-width: 720px) {
+            .picker-shell {
+                align-items: flex-end;
+                padding: var(--sp-2);
+            }
+            .picker-panel {
+                width: 100%;
+                max-height: calc(100vh - var(--sp-2) * 2);
+                border-radius: 22px;
+            }
+            .picker-header,
+            .picker-body,
+            .picker-footer {
+                padding-left: var(--sp-4);
+                padding-right: var(--sp-4);
+            }
+            .picker-type-grid {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -172,11 +518,54 @@
             gap: var(--sp-3);
         }
         .status-progress-row .progress { flex: 1; }
+        .section-shell {
+            margin-bottom: var(--sp-4);
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-bottom: var(--sp-3);
+            flex-wrap: wrap;
+        }
+        .section-header.section-header-tight {
+            margin-bottom: 0;
+        }
+        .section-header-copy {
+            min-width: 0;
+        }
+        .section-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--bg-elev);
+            color: var(--text-2);
+            cursor: pointer;
+            transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+        }
+        .section-toggle:hover {
+            border-color: var(--border-strong);
+            color: var(--text-1);
+        }
+        .section-toggle-icon {
+            width: 16px;
+            height: 16px;
+            transition: transform var(--t-fast) var(--ease);
+        }
+        .section-toggle.is-collapsed .section-toggle-icon {
+            transform: rotate(-90deg);
+        }
+        .section-content {
+            min-width: 0;
+        }
         .task-board {
             display: grid;
             grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
             gap: var(--sp-4);
-            margin-bottom: var(--sp-4);
         }
         @media (max-width: 960px) {
             .task-board { grid-template-columns: 1fr; }
@@ -185,12 +574,16 @@
         .task-queue-card {
             overflow: hidden;
         }
+        .task-queue-card {
+            overflow: visible;
+        }
         .task-board-title {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: var(--sp-3);
             margin-bottom: var(--sp-3);
+            flex-wrap: wrap;
         }
         .task-scope-tabs {
             display: inline-flex;
@@ -224,30 +617,186 @@
             margin-bottom: var(--sp-3);
             flex-wrap: wrap;
         }
-        .task-filter-tabs {
-            display: inline-flex;
+        .task-filter-box {
+            position: relative;
+            display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 4px;
+            gap: var(--sp-2);
+            min-width: min(100%, 240px);
+            max-width: 100%;
+        }
+        .task-filter-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            padding: 8px 12px;
             border-radius: 999px;
-            background: var(--bg-elev);
             border: 1px solid var(--border);
+            background: var(--bg-elev);
+            transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+            cursor: pointer;
+            text-align: left;
+        }
+        .task-filter-trigger:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+        }
+        .task-filter-copy {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
             flex-wrap: wrap;
         }
-        .task-filter-tab {
-            border: 0;
-            background: transparent;
+        .task-filter-label {
+            color: var(--text-3);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .task-filter-current {
+            color: var(--text-1);
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .task-filter-hint {
+            color: var(--text-3);
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        .task-filter-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-3);
+            box-shadow: 0 0 0 4px rgba(138, 154, 179, 0.08);
+            flex: none;
+        }
+        .task-filter-chevron {
+            width: 14px;
+            height: 14px;
+            color: var(--text-3);
+            flex: none;
+            transition: transform var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+        }
+        .task-filter-box.is-open .task-filter-chevron {
+            transform: rotate(180deg);
+            color: var(--text-1);
+        }
+        .task-filter-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 20;
+            width: min(100%, 340px);
+            max-width: calc(100vw - 48px);
+            padding: 8px;
+            border-radius: var(--r-lg);
+            border: 1px solid var(--border);
+            background: rgba(14, 20, 34, 0.98);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(12px);
+            overflow: hidden;
+        }
+        .task-filter-menu-title {
+            padding: 6px 8px 10px;
             color: var(--text-2);
             font-size: 12px;
-            padding: 6px 10px;
-            border-radius: 999px;
-            cursor: pointer;
-            transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+            line-height: 1.5;
         }
-        .task-filter-tab.is-active {
+        .task-filter-option {
+            width: 100%;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px;
+            border: 0;
+            border-radius: var(--r-md);
+            background: transparent;
+            color: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+        }
+        .task-filter-option:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .task-filter-option.is-selected {
             background: rgba(91, 141, 239, 0.12);
+        }
+        .task-filter-option-copy {
+            flex: 1;
+            min-width: 0;
+        }
+        .task-filter-option-name {
+            color: var(--text-1);
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .task-filter-option-desc {
+            margin-top: 2px;
+            color: var(--text-3);
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        .task-filter-option-check {
             color: var(--primary);
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
+            opacity: 0;
+            transition: opacity var(--t-fast) var(--ease);
+        }
+        .task-filter-option.is-selected .task-filter-option-check {
+            opacity: 1;
+        }
+        .task-filter-box.is-active .task-filter-trigger {
+            border-color: rgba(91, 141, 239, 0.34);
+            background: rgba(91, 141, 239, 0.08);
+            box-shadow: 0 0 0 1px rgba(91, 141, 239, 0.08);
+        }
+        .task-filter-box.is-active .task-filter-dot {
+            background: var(--primary);
+            box-shadow: 0 0 0 4px rgba(91, 141, 239, 0.12);
+        }
+        .task-filter-box.is-queued .task-filter-trigger {
+            border-color: rgba(237, 170, 49, 0.3);
+            background: rgba(237, 170, 49, 0.08);
+        }
+        .task-filter-box.is-queued .task-filter-dot {
+            background: var(--accent);
+            box-shadow: 0 0 0 4px rgba(237, 170, 49, 0.12);
+        }
+        .task-filter-box.is-running .task-filter-trigger {
+            border-color: rgba(91, 141, 239, 0.34);
+            background: rgba(91, 141, 239, 0.08);
+        }
+        .task-filter-box.is-running .task-filter-dot {
+            background: var(--primary);
+            box-shadow: 0 0 0 4px rgba(91, 141, 239, 0.12);
+        }
+        .task-filter-box.is-completed .task-filter-trigger {
+            border-color: rgba(41, 180, 140, 0.28);
+            background: rgba(41, 180, 140, 0.08);
+        }
+        .task-filter-box.is-completed .task-filter-dot {
+            background: var(--ok);
+            box-shadow: 0 0 0 4px rgba(41, 180, 140, 0.12);
+        }
+        .task-filter-box.is-failed .task-filter-trigger {
+            border-color: rgba(239, 77, 107, 0.28);
+            background: rgba(239, 77, 107, 0.08);
+        }
+        .task-filter-box.is-failed .task-filter-dot {
+            background: var(--danger);
+            box-shadow: 0 0 0 4px rgba(239, 77, 107, 0.12);
+        }
+        .task-item.is-completed {
+            border-color: rgba(41, 180, 140, 0.22);
+        }
+        .task-item.is-failed {
+            border-color: rgba(239, 77, 107, 0.22);
+            background: linear-gradient(180deg, rgba(239, 77, 107, 0.05), var(--bg-elev));
         }
         .task-latest-status {
             display: inline-flex;
@@ -315,6 +864,7 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: var(--sp-3);
+            flex-wrap: wrap;
         }
         .task-item-name {
             color: var(--text-1);
@@ -334,7 +884,26 @@
             gap: 8px;
             margin-top: var(--sp-3);
         }
-        .task-action-btn { min-width: 66px; }
+        .task-action-btn {
+            min-width: 32px;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            position: relative;
+        }
+        .task-action-btn svg {
+            width: 15px;
+            height: 15px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .task-action-btn.task-action-delete svg {
+            width: 14px;
+            height: 14px;
+        }
         .task-progress { margin-top: var(--sp-3); }
         .task-progress-text {
             margin-top: 6px;
@@ -347,6 +916,60 @@
             border: 1px dashed var(--border);
             color: var(--text-3);
             text-align: center;
+        }
+        @media (max-width: 720px) {
+            .task-filter-row {
+                align-items: stretch;
+            }
+            .task-filter-box {
+                width: 100%;
+                min-width: 0;
+            }
+            .task-filter-trigger {
+                align-items: flex-start;
+                padding: 10px 12px;
+            }
+            .task-filter-copy {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 2px;
+            }
+            .task-filter-hint {
+                white-space: normal;
+            }
+            .task-filter-menu {
+                position: static;
+                width: 100%;
+                max-width: 100%;
+                margin-top: 8px;
+                left: auto;
+                right: auto;
+                top: auto;
+                box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+            }
+            .task-filter-option {
+                padding: 12px 10px;
+            }
+            .task-filter-option-check {
+                display: none;
+            }
+            .task-board-title > .text-3 {
+                width: 100%;
+            }
+        }
+        @media (max-width: 560px) {
+            .task-filter-row > .text-3 {
+                width: 100%;
+            }
+            .task-filter-trigger {
+                border-radius: var(--r-md);
+            }
+            .task-filter-menu {
+                border-radius: var(--r-md);
+            }
+            .task-item-actions {
+                gap: 6px;
+            }
         }
 
         /* 主栅格 */
@@ -507,6 +1130,20 @@
             font-variant-numeric: tabular-nums;
             margin-top: 2px;
         }
+        .history-actions {
+            margin-top: var(--sp-2);
+            display: flex;
+            justify-content: flex-end;
+        }
+        .history-actions .btn-icon svg {
+            width: 15px;
+            height: 15px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
 
         /* 失败摘要 */
         .failure-summary {
@@ -597,109 +1234,169 @@
         </section>
 
         <!-- ========== 工具栏 ========== -->
-        <div class="card card-compact stack toolbar-card"
-             :class="{ 'is-guided': guide.active }"
-             x-ref="toolbarCard"
-             style="margin-bottom: var(--sp-4);">
-            <div class="guide-banner" x-show="guide.active">
-                <div>
-                    <div class="guide-banner-title">下一步已经帮你定位好了</div>
-                    <div class="guide-banner-desc">
-                        已为你选中
-                        <strong x-text="guide.targetName || currentTargetName() || '当前目标'"></strong>
-                        ，直接点右侧的“开始扫描”就会跑全市场。
-                    </div>
-                    <div class="guide-banner-step">第 1 步 · 确认目标  第 2 步 · 点击开始扫描</div>
+        <section class="section-shell">
+            <div class="section-header">
+                <div class="section-header-copy">
+                    <div class="title-lg">执行面板</div>
+                    <div class="text-3 text-small">选择策略目标并发起全市场扫描</div>
                 </div>
-                <button type="button" class="guide-dismiss" @click="dismissGuide()" aria-label="关闭引导">×</button>
-            </div>
-            <div class="toolbar">
-                <select class="select" x-model="targetType" @change="onTargetTypeChange()">
-                    <option value="strategy">按策略执行</option>
-                    <option value="group">按策略组执行</option>
-                </select>
-                <select class="select" x-model.number="targetId">
-                    <template x-if="currentTargetList().length === 0">
-                        <option value="">暂无可选</option>
-                    </template>
-                    <template x-for="item in currentTargetList()" :key="item.id">
-                        <option :value="item.id" x-text="item.name"></option>
-                    </template>
-                </select>
-                <button class="btn btn-primary"
-                        :class="{ 'guided-run-btn': guide.active }"
-                        @click="runScreener()"
-                        :disabled="!canRun">
-                    <template x-if="isStarting || (status && status.running)">
-                        <span class="spinner spinner-on-primary"></span>
-                    </template>
-                    <span x-text="status && status.running ? '运行中' : '开始扫描'"></span>
+                <button type="button"
+                        class="section-toggle"
+                        :class="{ 'is-collapsed': isSectionCollapsed('toolbar') }"
+                        @click="toggleSection('toolbar')"
+                        :aria-expanded="isSectionCollapsed('toolbar') ? 'false' : 'true'">
+                    <svg class="section-toggle-icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    <span x-text="isSectionCollapsed('toolbar') ? '展开' : '收起'"></span>
                 </button>
-                <a class="btn btn-ghost md-only" href="/strategies">管理策略</a>
             </div>
-        </div>
-
-        <!-- ========== 状态卡 ========== -->
-        <section class="card status-card" :class="{ 'is-running': status && status.running }"
-                 style="margin-bottom: var(--sp-4);">
-            <div class="row-between">
-                <div>
-                    <div class="title-md" x-text="status && status.target_name ? status.target_name : (currentTargetName() || '等待选择目标')"></div>
-                    <div class="text-2 text-small" style="margin-top: 4px;">
-                        <template x-if="status && status.running">
-                            <span style="color: var(--primary);">正在扫描全市场…</span>
-                        </template>
-                        <template x-if="status && !status.running && status.status === 'completed'">
-                            <span>最近一次运行已完成</span>
-                        </template>
-                        <template x-if="status && !status.running && status.status !== 'completed'">
-                            <span>当前没有运行中的任务</span>
-                        </template>
-                        <template x-if="!status">
-                            <span>加载中…</span>
-                        </template>
+            <div class="section-content" x-show="!isSectionCollapsed('toolbar')">
+                <div class="card card-compact stack toolbar-card"
+                     :class="{ 'is-guided': guide.active }"
+                     x-ref="toolbarCard">
+                    <div class="guide-banner" x-show="guide.active">
+                        <div>
+                            <div class="guide-banner-title">下一步已经帮你定位好了</div>
+                            <div class="guide-banner-desc">
+                                已为你选中
+                                <strong x-text="guide.targetName || currentTargetName() || '当前目标'"></strong>
+                                ，直接点右侧的“开始扫描”就会跑全市场。
+                            </div>
+                            <div class="guide-banner-step">第 1 步 · 确认目标  第 2 步 · 点击开始扫描</div>
+                        </div>
+                        <button type="button" class="guide-dismiss" @click="dismissGuide()" aria-label="关闭引导">×</button>
+                    </div>
+                    <div class="toolbar">
+                        <button type="button" class="btn toolbar-picker-btn" @click="openTargetPicker('type')">
+                            <span class="toolbar-picker-main">
+                                <span class="toolbar-picker-label">执行方式</span>
+                                <span class="toolbar-picker-value" x-text="targetTypeLabel()"></span>
+                                <span class="toolbar-picker-meta">切换按策略或策略组扫描</span>
+                            </span>
+                            <span class="toolbar-picker-arrow">›</span>
+                        </button>
+                        <button type="button" class="btn toolbar-picker-btn" @click="openTargetPicker('target')">
+                            <span class="toolbar-picker-main">
+                                <span class="toolbar-picker-label" x-text="targetType === 'group' ? '当前策略组' : '当前策略'"></span>
+                                <span class="toolbar-picker-value" x-text="currentTargetName() || '请选择目标'"></span>
+                                <span class="toolbar-picker-meta" x-text="currentTargetList().length ? `共 ${currentTargetList().length} 个可选` : '当前没有可选目标'"></span>
+                            </span>
+                            <span class="toolbar-picker-arrow">›</span>
+                        </button>
+                        <button class="btn btn-primary"
+                                :class="{ 'guided-run-btn': guide.active }"
+                                @click="runScreener()"
+                                :disabled="!canRun">
+                            <template x-if="isStarting || (status && status.running)">
+                                <span class="spinner spinner-on-primary"></span>
+                            </template>
+                            <span x-text="status && status.running ? '运行中' : '开始扫描'"></span>
+                        </button>
+                        <a class="btn btn-ghost md-only" href="/strategies">管理策略</a>
                     </div>
                 </div>
-                <div class="text-2 text-small" x-show="status && status.time">
-                    <span class="text-3">最近运行 · </span>
-                    <span x-text="status && status.time"></span>
-                </div>
-            </div>
-
-            <div class="status-grid">
-                <div class="stat-tile">
-                    <div class="stat-label">命中</div>
-                    <div class="stat-value" x-text="(status && status.matched_count) || 0"></div>
-                    <div class="stat-sub">只股票</div>
-                </div>
-                <div class="stat-tile">
-                    <div class="stat-label">扫描进度</div>
-                    <div class="stat-value" x-text="`${(status && status.processed) || 0} / ${(status && status.total_stocks) || 0}`"></div>
-                    <div class="stat-sub" x-text="progressPercent + '%'"></div>
-                </div>
-                <div class="stat-tile">
-                    <div class="stat-label">目标类型</div>
-                    <div class="stat-value" style="font-size: 16px; padding-top: 2px;"
-                         x-text="targetType === 'group' ? '策略组' : '单策略'"></div>
-                    <div class="stat-sub" x-text="status && status.target_logic ? status.target_logic : '—'"></div>
-                </div>
-            </div>
-
-            <div class="status-progress-row" x-show="status && (status.total_stocks > 0 || status.running)">
-                <div class="progress">
-                    <div class="progress-bar" :style="`width: ${progressPercent}%`"></div>
-                </div>
-                <div class="text-3 text-small" x-text="progressPercent + '%'"></div>
-            </div>
-
-            <div class="failure-summary" x-show="status && status.failure_summary">
-                <span class="failure-summary-label">未命中摘要</span>
-                <span x-text="status && status.failure_summary"></span>
             </div>
         </section>
 
-        <section class="task-board">
-            <div class="card task-latest-card">
+        <!-- ========== 状态卡 ========== -->
+        <section class="section-shell">
+            <div class="section-header">
+                <div class="section-header-copy">
+                    <div class="title-lg">扫描状态</div>
+                    <div class="text-3 text-small">查看当前目标的实时进度与命中概览</div>
+                </div>
+                <button type="button"
+                        class="section-toggle"
+                        :class="{ 'is-collapsed': isSectionCollapsed('status') }"
+                        @click="toggleSection('status')"
+                        :aria-expanded="isSectionCollapsed('status') ? 'false' : 'true'">
+                    <svg class="section-toggle-icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    <span x-text="isSectionCollapsed('status') ? '展开' : '收起'"></span>
+                </button>
+            </div>
+            <div class="section-content" x-show="!isSectionCollapsed('status')">
+                <section class="card status-card" :class="{ 'is-running': status && status.running }">
+                    <div class="row-between">
+                        <div>
+                            <div class="title-md" x-text="status && status.target_name ? status.target_name : (currentTargetName() || '等待选择目标')"></div>
+                            <div class="text-2 text-small" style="margin-top: 4px;">
+                                <template x-if="status && status.running">
+                                    <span style="color: var(--primary);">正在扫描全市场…</span>
+                                </template>
+                                <template x-if="status && !status.running && status.status === 'completed'">
+                                    <span>最近一次运行已完成</span>
+                                </template>
+                                <template x-if="status && !status.running && status.status !== 'completed'">
+                                    <span>当前没有运行中的任务</span>
+                                </template>
+                                <template x-if="!status">
+                                    <span>加载中…</span>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="text-2 text-small" x-show="status && status.time">
+                            <span class="text-3">最近运行 · </span>
+                            <span x-text="status && status.time"></span>
+                        </div>
+                    </div>
+
+                    <div class="status-grid">
+                        <div class="stat-tile">
+                            <div class="stat-label">命中</div>
+                            <div class="stat-value" x-text="(status && status.matched_count) || 0"></div>
+                            <div class="stat-sub">只股票</div>
+                        </div>
+                        <div class="stat-tile">
+                            <div class="stat-label">扫描进度</div>
+                            <div class="stat-value" x-text="`${(status && status.processed) || 0} / ${(status && status.total_stocks) || 0}`"></div>
+                            <div class="stat-sub" x-text="progressPercent + '%'"></div>
+                        </div>
+                        <div class="stat-tile">
+                            <div class="stat-label">目标类型</div>
+                            <div class="stat-value" style="font-size: 16px; padding-top: 2px;"
+                                 x-text="targetType === 'group' ? '策略组' : '单策略'"></div>
+                            <div class="stat-sub" x-text="status && status.target_logic ? status.target_logic : '—'"></div>
+                        </div>
+                    </div>
+
+                    <div class="status-progress-row" x-show="status && (status.total_stocks > 0 || status.running)">
+                        <div class="progress">
+                            <div class="progress-bar" :style="`width: ${progressPercent}%`"></div>
+                        </div>
+                        <div class="text-3 text-small" x-text="progressPercent + '%'"></div>
+                    </div>
+
+                    <div class="failure-summary" x-show="status && status.failure_summary">
+                        <span class="failure-summary-label">未命中摘要</span>
+                        <span x-text="status && status.failure_summary"></span>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="section-shell">
+            <div class="section-header">
+                <div class="section-header-copy">
+                    <div class="title-lg">任务面板</div>
+                    <div class="text-3 text-small">支持查看全部任务，并可折叠收起这一整块</div>
+                </div>
+                <button type="button"
+                        class="section-toggle"
+                        :class="{ 'is-collapsed': isSectionCollapsed('tasks') }"
+                        @click="toggleSection('tasks')"
+                        :aria-expanded="isSectionCollapsed('tasks') ? 'false' : 'true'">
+                    <svg class="section-toggle-icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    <span x-text="isSectionCollapsed('tasks') ? '展开' : '收起'"></span>
+                </button>
+            </div>
+            <div class="section-content" x-show="!isSectionCollapsed('tasks')">
+                <section class="task-board">
+                    <div class="card task-latest-card">
                 <div class="task-board-title">
                     <div>
                         <div class="title-lg">最近任务状态</div>
@@ -749,9 +1446,9 @@
                         <div class="task-mini-sub" x-text="taskSummaryText(latestTask)"></div>
                     </div>
                 </div>
-            </div>
+                    </div>
 
-            <div class="card task-queue-card">
+                    <div class="card task-queue-card">
                 <div class="task-board-title">
                     <div>
                         <div class="title-lg">任务队列</div>
@@ -761,33 +1458,42 @@
                     <div class="text-3 text-small" x-text="tasks ? `共 ${tasks.length} 条` : '加载中…'"></div>
                 </div>
 
-                <div class="task-filter-row" x-show="taskScope === 'all'">
-                    <div class="task-filter-tabs">
-                        <button type="button" class="task-filter-tab"
-                                :class="{ 'is-active': taskStatusFilter === 'all' }"
-                                @click="taskStatusFilter = 'all'">
-                            全部
+                <div class="task-filter-row">
+                    <div class="task-filter-box"
+                         :class="[taskFilterBoxClass(), { 'is-open': taskFilterOpen }]"
+                         @keydown.escape.window="taskFilterOpen = false"
+                         @click.outside="taskFilterOpen = false">
+                        <button type="button"
+                                class="task-filter-trigger"
+                                @click="taskFilterOpen = !taskFilterOpen"
+                                :aria-expanded="taskFilterOpen ? 'true' : 'false'"
+                                aria-haspopup="menu">
+                            <span class="task-filter-dot" aria-hidden="true"></span>
+                            <span class="task-filter-copy">
+                                <span class="task-filter-label">状态筛选</span>
+                                <span class="task-filter-current" x-text="taskFilterLabel()"></span>
+                                <span class="task-filter-hint">点击切换</span>
+                            </span>
+                            <svg class="task-filter-chevron" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
                         </button>
-                        <button type="button" class="task-filter-tab"
-                                :class="{ 'is-active': taskStatusFilter === 'queued' }"
-                                @click="taskStatusFilter = 'queued'">
-                            排队中
-                        </button>
-                        <button type="button" class="task-filter-tab"
-                                :class="{ 'is-active': taskStatusFilter === 'running' }"
-                                @click="taskStatusFilter = 'running'">
-                            运行中
-                        </button>
-                        <button type="button" class="task-filter-tab"
-                                :class="{ 'is-active': taskStatusFilter === 'completed' }"
-                                @click="taskStatusFilter = 'completed'">
-                            已完成
-                        </button>
-                        <button type="button" class="task-filter-tab"
-                                :class="{ 'is-active': taskStatusFilter === 'failed' }"
-                                @click="taskStatusFilter = 'failed'">
-                            失败
-                        </button>
+                        <div class="task-filter-menu" x-show="taskFilterOpen" x-transition.origin.top.left>
+                            <div class="task-filter-menu-title">选择要显示的任务状态，帮助你更快找到正在关注的任务。</div>
+                            <template x-for="option in taskFilterOptions" :key="option.value">
+                                <button type="button"
+                                        class="task-filter-option"
+                                        :class="{ 'is-selected': taskStatusFilter === option.value }"
+                                        @click="setTaskStatusFilter(option.value)">
+                                    <span class="task-filter-dot" :style="`background:${option.color}; box-shadow: 0 0 0 4px ${option.ring};`" aria-hidden="true"></span>
+                                    <span class="task-filter-option-copy">
+                                        <span class="task-filter-option-name" x-text="option.label"></span>
+                                        <span class="task-filter-option-desc" x-text="option.desc"></span>
+                                    </span>
+                                    <span class="task-filter-option-check">当前</span>
+                                </button>
+                            </template>
+                        </div>
                     </div>
                     <div class="text-3 text-small" x-text="`筛选后 ${displayTasks.length} 条`"></div>
                 </div>
@@ -806,15 +1512,16 @@
                 <div class="task-queue-list" x-show="displayTasks && displayTasks.length > 0">
                     <template x-for="(task, index) in displayTasks" :key="task.id">
                         <div class="task-item"
-                             :class="{ 'is-running': task.status === 'running', 'is-queued': task.status === 'queued' }">
+                             :class="{ 'is-running': task.status === 'running', 'is-queued': task.status === 'queued', 'is-completed': task.status === 'completed', 'is-failed': task.status === 'failed' }">
                             <div class="task-item-head">
                                 <div>
                                     <div class="task-item-name" x-text="task.target_name || '未命名目标'"></div>
                                     <div class="task-item-meta"
                                          x-text="`#${task.id} · ${task.target_type === 'group' ? '策略组' : '策略'} · ${taskStatusText(task)}`"></div>
                                 </div>
-                                <span class="badge badge-dim"
-                                      x-text="task.status === 'queued' ? `队列第 ${queuedTaskIndex(task.id)}` : (task.status === 'running' ? '执行中' : '已结束')"></span>
+                                <span class="badge"
+                                      :class="taskStatusBadgeClass(task)"
+                                      x-text="taskStatusBadgeText(task)"></span>
                             </div>
 
                             <div class="task-item-desc" x-text="taskSummaryText(task)"></div>
@@ -828,30 +1535,65 @@
                             </div>
 
                             <div class="task-item-actions">
-                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                <button class="btn btn-ghost btn-sm btn-icon task-action-btn"
+                                        x-show="canDownloadMissLog(task)"
+                                        @click="downloadMissLog(task)"
+                                        title="下载日志"
+                                        aria-label="下载日志">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                        <path d="M8 3.5v6"></path>
+                                        <path d="M5.5 7.5 8 10l2.5-2.5"></path>
+                                        <path d="M3.5 11.5v1h9v-1"></path>
+                                    </svg>
+                                </button>
+                                <button class="btn btn-ghost btn-sm btn-icon task-action-btn"
                                         @click="actOnTask(task.id, 'top')"
-                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)">
-                                    插队
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)"
+                                        title="插队"
+                                        aria-label="插队">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                        <path d="M5 7.5 8 4.5l3 3"></path>
+                                        <path d="M5 12 8 9l3 3"></path>
+                                    </svg>
                                 </button>
-                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                <button class="btn btn-ghost btn-sm btn-icon task-action-btn"
                                         @click="actOnTask(task.id, 'up')"
-                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)">
-                                    上移
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === 1 || isTaskBusy(task.id)"
+                                        title="上移"
+                                        aria-label="上移">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                        <path d="M5 10.5 8 7.5l3 3"></path>
+                                    </svg>
                                 </button>
-                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                <button class="btn btn-ghost btn-sm btn-icon task-action-btn"
                                         @click="actOnTask(task.id, 'down')"
-                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === queuedTasks.length || isTaskBusy(task.id)">
-                                    下移
+                                        :disabled="task.status !== 'queued' || queuedTaskIndex(task.id) === queuedTasks.length || isTaskBusy(task.id)"
+                                        title="下移"
+                                        aria-label="下移">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                        <path d="M5 6.5 8 9.5l3-3"></path>
+                                    </svg>
                                 </button>
-                                <button class="btn btn-ghost btn-sm task-action-btn"
+                                <button class="btn btn-ghost btn-sm btn-icon task-action-btn task-action-delete"
                                         @click="actOnTask(task.id, 'delete')"
-                                        :disabled="task.status === 'running' || isTaskBusy(task.id)">
-                                    删除
+                                        :disabled="task.status === 'running' || isTaskBusy(task.id)"
+                                        title="删除"
+                                        aria-label="删除">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                        <path d="M3.5 4.5h9"></path>
+                                        <path d="M6 4.5V3.7c0-.4.3-.7.7-.7h2.6c.4 0 .7.3.7.7v.8"></path>
+                                        <path d="M5 6.5v5"></path>
+                                        <path d="M8 6.5v5"></path>
+                                        <path d="M11 6.5v5"></path>
+                                        <path d="M4.5 4.5l.5 7.2c0 .7.6 1.3 1.3 1.3h3.4c.7 0 1.3-.6 1.3-1.3l.5-7.2"></path>
+                                    </svg>
                                 </button>
                             </div>
                         </div>
                     </template>
-                </div>
+                    </div>
+                    </div>
+                </section>
             </div>
         </section>
 
@@ -873,86 +1615,100 @@
             <!-- 结果列 -->
             <section class="card" x-show="isDesktop || view === 'results'">
                 <div class="card-header">
-                    <div>
-                        <div class="title-lg">最新结果</div>
-                        <div class="text-2 text-small" x-show="results">
-                            共 <span x-text="results ? results.length : 0"></span> 条
-                            <span x-show="status && status.time" class="text-3"> · <span x-text="status && status.time"></span></span>
+                    <div class="section-header section-header-tight">
+                        <div class="section-header-copy">
+                            <div class="title-lg">最新结果</div>
+                            <div class="text-2 text-small" x-show="results">
+                                共 <span x-text="results ? results.length : 0"></span> 条
+                                <span x-show="status && status.time" class="text-3"> · <span x-text="status && status.time"></span></span>
+                            </div>
                         </div>
+                        <button type="button"
+                                class="section-toggle"
+                                :class="{ 'is-collapsed': isSectionCollapsed('results') }"
+                                @click="toggleSection('results')"
+                                :aria-expanded="isSectionCollapsed('results') ? 'false' : 'true'">
+                            <svg class="section-toggle-icon" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            <span x-text="isSectionCollapsed('results') ? '展开' : '收起'"></span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- 骨架 -->
-                <template x-if="results === null">
-                    <div>
-                        <div class="skeleton skeleton-row"></div>
-                        <div class="skeleton skeleton-row"></div>
-                        <div class="skeleton skeleton-row"></div>
-                    </div>
-                </template>
-
-                <!-- 空态 -->
-                <template x-if="results !== null && results.length === 0">
-                    <div class="empty">
-                        <div class="empty-icon">🔍</div>
-                        <div>当前没有命中结果</div>
-                        <div class="text-3">选择策略后点击"开始扫描"</div>
-                    </div>
-                </template>
-
-                <!-- 列表 -->
-                <div class="result-list" x-show="results && results.length > 0">
-                    <template x-for="item in paginatedResults" :key="item.code">
-                        <a class="result-item" :href="stockDetailUrl(item.code)" :title="`查看 ${item.name} 的 K 线`">
-                            <div class="result-head">
-                                <div>
-                                    <span class="result-name" x-text="item.name"></span>
-                                    <span class="result-code" x-text="item.code"></span>
-                                    <span class="result-link-hint">查看 K 线 →</span>
-                                </div>
-                                <span class="score-badge">
-                                    <span x-text="Number(item.score || 0).toFixed(1)"></span>
-                                    <span class="score-unit">分</span>
-                                </span>
-                            </div>
-                            <div class="result-strategies">
-                                <template x-if="(item.matched_strategies || []).length > 0">
-                                    <template x-for="name in item.matched_strategies" :key="name">
-                                        <span class="pill" x-text="name"></span>
-                                    </template>
-                                </template>
-                                <template x-if="!item.matched_strategies || item.matched_strategies.length === 0">
-                                    <span class="pill" style="opacity: 0.6;">未返回命中策略</span>
-                                </template>
-                            </div>
-                            <div class="result-reason" x-text="item.reason || item.weekly || '—'"></div>
-                            <div class="result-metrics">
-                                <div class="metric-tile">
-                                    <div class="metric-label">成交量</div>
-                                    <div class="metric-value" x-text="formatVol(item.current_vol)"></div>
-                                </div>
-                                <div class="metric-tile">
-                                    <div class="metric-label">DIF</div>
-                                    <div class="metric-value" x-text="Number(item.dif || 0).toFixed(2)"></div>
-                                </div>
-                                <div class="metric-tile">
-                                    <div class="metric-label">DEA</div>
-                                    <div class="metric-value" x-text="Number(item.dea || 0).toFixed(2)"></div>
-                                </div>
-                            </div>
-                        </a>
+                <div class="section-content" x-show="!isSectionCollapsed('results')">
+                    <!-- 骨架 -->
+                    <template x-if="results === null">
+                        <div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                        </div>
                     </template>
-                </div>
 
-                <!-- 分页 -->
-                <div class="pager" x-show="results && results.length > PAGE_SIZE">
-                    <div class="pager-info">共 <span x-text="results ? results.length : 0"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条</div>
-                    <div class="pager-actions">
-                        <button class="btn btn-ghost btn-sm" @click="resultsPage = 1" :disabled="resultsPage === 1">首页</button>
-                        <button class="btn btn-ghost btn-sm" @click="resultsPage--" :disabled="resultsPage === 1">上一页</button>
-                        <span class="pager-chip" x-text="`${resultsPage} / ${totalPages(results)}`"></span>
-                        <button class="btn btn-ghost btn-sm" @click="resultsPage++" :disabled="resultsPage >= totalPages(results)">下一页</button>
-                        <button class="btn btn-ghost btn-sm" @click="resultsPage = totalPages(results)" :disabled="resultsPage >= totalPages(results)">末页</button>
+                    <!-- 空态 -->
+                    <template x-if="results !== null && results.length === 0">
+                        <div class="empty">
+                            <div class="empty-icon">🔍</div>
+                            <div>当前没有命中结果</div>
+                            <div class="text-3">选择策略后点击"开始扫描"</div>
+                        </div>
+                    </template>
+
+                    <!-- 列表 -->
+                    <div class="result-list" x-show="results && results.length > 0">
+                        <template x-for="item in paginatedResults" :key="item.code">
+                            <a class="result-item" :href="stockDetailUrl(item.code)" :title="`查看 ${item.name} 的 K 线`">
+                                <div class="result-head">
+                                    <div>
+                                        <span class="result-name" x-text="item.name"></span>
+                                        <span class="result-code" x-text="item.code"></span>
+                                        <span class="result-link-hint">查看 K 线 →</span>
+                                    </div>
+                                    <span class="score-badge">
+                                        <span x-text="Number(item.score || 0).toFixed(1)"></span>
+                                        <span class="score-unit">分</span>
+                                    </span>
+                                </div>
+                                <div class="result-strategies">
+                                    <template x-if="(item.matched_strategies || []).length > 0">
+                                        <template x-for="name in item.matched_strategies" :key="name">
+                                            <span class="pill" x-text="name"></span>
+                                        </template>
+                                    </template>
+                                    <template x-if="!item.matched_strategies || item.matched_strategies.length === 0">
+                                        <span class="pill" style="opacity: 0.6;">未返回命中策略</span>
+                                    </template>
+                                </div>
+                                <div class="result-reason" x-text="item.reason || item.weekly || '—'"></div>
+                                <div class="result-metrics">
+                                    <div class="metric-tile">
+                                        <div class="metric-label">成交量</div>
+                                        <div class="metric-value" x-text="formatVol(item.current_vol)"></div>
+                                    </div>
+                                    <div class="metric-tile">
+                                        <div class="metric-label">DIF</div>
+                                        <div class="metric-value" x-text="Number(item.dif || 0).toFixed(2)"></div>
+                                    </div>
+                                    <div class="metric-tile">
+                                        <div class="metric-label">DEA</div>
+                                        <div class="metric-value" x-text="Number(item.dea || 0).toFixed(2)"></div>
+                                    </div>
+                                </div>
+                            </a>
+                        </template>
+                    </div>
+
+                    <!-- 分页 -->
+                    <div class="pager" x-show="results && results.length > PAGE_SIZE">
+                        <div class="pager-info">共 <span x-text="results ? results.length : 0"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条</div>
+                        <div class="pager-actions">
+                            <button class="btn btn-ghost btn-sm" @click="resultsPage = 1" :disabled="resultsPage === 1">首页</button>
+                            <button class="btn btn-ghost btn-sm" @click="resultsPage--" :disabled="resultsPage === 1">上一页</button>
+                            <span class="pager-chip" x-text="`${resultsPage} / ${totalPages(results)}`"></span>
+                            <button class="btn btn-ghost btn-sm" @click="resultsPage++" :disabled="resultsPage >= totalPages(results)">下一页</button>
+                            <button class="btn btn-ghost btn-sm" @click="resultsPage = totalPages(results)" :disabled="resultsPage >= totalPages(results)">末页</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -960,10 +1716,24 @@
             <!-- 历史列 -->
             <aside class="card col-history" x-show="isDesktop || view === 'history'">
                 <div class="card-header">
-                    <div class="title-lg">运行历史</div>
-                    <div class="text-3 text-small">点击查看详情</div>
+                    <div class="section-header section-header-tight">
+                        <div class="section-header-copy">
+                            <div class="title-lg">运行历史</div>
+                            <div class="text-3 text-small">点击查看详情</div>
+                        </div>
+                        <button type="button"
+                                class="section-toggle"
+                                :class="{ 'is-collapsed': isSectionCollapsed('history') }"
+                                @click="toggleSection('history')"
+                                :aria-expanded="isSectionCollapsed('history') ? 'false' : 'true'">
+                            <svg class="section-toggle-icon" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4.5 6.5 8 10l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            <span x-text="isSectionCollapsed('history') ? '展开' : '收起'"></span>
+                        </button>
+                    </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body" x-show="!isSectionCollapsed('history')">
                     <template x-if="history === null">
                         <div>
                             <div class="skeleton skeleton-row" style="height: 60px;"></div>
@@ -991,6 +1761,18 @@
                                     <span x-text="' · ' + item.run_time"></span>
                                     <span x-text="' · ' + (item.target_type === 'group' ? '策略组' : '策略')"></span>
                                     <span x-show="item.target_logic" x-text="' · ' + item.target_logic"></span>
+                                </div>
+                                <div class="history-actions" x-show="canDownloadMissLog(item)">
+                                    <button class="btn btn-ghost btn-sm btn-icon"
+                                            @click.stop="downloadMissLog(item)"
+                                            title="下载日志"
+                                            aria-label="下载日志">
+                                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                                            <path d="M8 3.5v6"></path>
+                                            <path d="M5.5 7.5 8 10l2.5-2.5"></path>
+                                            <path d="M3.5 11.5v1h9v-1"></path>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         </template>
@@ -1089,6 +1871,156 @@
             </div>
         </template>
 
+        <!-- ========== 目标选择弹窗 ========== -->
+        <template x-if="targetPicker.open">
+            <div>
+                <div class="picker-backdrop" x-transition.opacity @click="closeTargetPicker()"></div>
+                <div class="picker-shell">
+                    <section class="picker-panel"
+                             x-transition:enter="picker-enter"
+                             x-transition:enter-start="picker-enter-start"
+                             x-transition:enter-end="picker-enter-end"
+                             x-transition:leave="picker-leave"
+                             x-transition:leave-start="picker-leave-start"
+                             x-transition:leave-end="picker-leave-end">
+                        <header class="picker-header">
+                            <div>
+                                <div class="picker-breadcrumb">
+                                    <button type="button"
+                                            class="btn picker-back-btn"
+                                            x-show="targetPicker.page === 'target'"
+                                            @click="targetPicker.page = 'type'"
+                                            aria-label="返回上一级">‹</button>
+                                    <span x-text="targetPicker.page === 'type' ? '步骤 1 / 2' : '步骤 2 / 2'"></span>
+                                    <span>·</span>
+                                    <span x-text="targetPicker.page === 'type' ? '选择执行方式' : '选择执行目标'"></span>
+                                </div>
+                                <div class="title-lg" x-text="targetPicker.page === 'type' ? '先确认扫描方式' : `选择${pickerTypeLabel()}目标`"></div>
+                                <div class="picker-subtitle"
+                                     x-text="targetPicker.page === 'type'
+                                        ? '先选按单个策略执行，还是按策略组组合执行；下一步再从对应列表里挑选具体目标。'
+                                        : `支持按名称、说明和关联信息搜索，翻页浏览全部${pickerTypeLabel()}。`"></div>
+                            </div>
+                            <button type="button" class="btn btn-ghost picker-close-btn" @click="closeTargetPicker()" aria-label="关闭">×</button>
+                        </header>
+
+                        <div class="picker-body">
+                            <template x-if="targetPicker.page === 'type'">
+                                <div class="picker-type-grid">
+                                    <button type="button"
+                                            class="picker-type-card"
+                                            :class="{ 'is-active': targetPicker.draftType === 'strategy' }"
+                                            @click="switchPickerType('strategy')">
+                                        <div class="picker-type-title">
+                                            <span>按策略执行</span>
+                                            <span class="badge" x-show="targetPicker.draftType === 'strategy'">当前选择</span>
+                                        </div>
+                                        <div class="picker-type-desc">适合快速验证单条策略效果，直接看这条策略能筛出哪些股票。</div>
+                                        <div class="picker-type-meta">
+                                            <span x-text="`${pickerTargetCount('strategy')} 个策略`"></span>
+                                        </div>
+                                    </button>
+                                    <button type="button"
+                                            class="picker-type-card"
+                                            :class="{ 'is-active': targetPicker.draftType === 'group' }"
+                                            @click="switchPickerType('group')">
+                                        <div class="picker-type-title">
+                                            <span>按策略组执行</span>
+                                            <span class="badge" x-show="targetPicker.draftType === 'group'">当前选择</span>
+                                        </div>
+                                        <div class="picker-type-desc">适合按 AND / OR 组合条件批量筛选，用一组策略一起跑完整市场。</div>
+                                        <div class="picker-type-meta">
+                                            <span x-text="`${pickerTargetCount('group')} 个策略组`"></span>
+                                        </div>
+                                    </button>
+                                </div>
+                            </template>
+
+                            <template x-if="targetPicker.page === 'target'">
+                                <div>
+                                    <div class="picker-summary">
+                                        <div class="picker-summary-label">准备执行</div>
+                                        <div class="picker-summary-name" x-text="pickerDraftTarget() ? pickerDraftTarget().name : `未选择${pickerTypeLabel()}`"></div>
+                                        <div class="picker-summary-meta"
+                                             x-text="pickerDraftTargetMeta()"></div>
+                                    </div>
+
+                                    <div class="picker-search-row">
+                                        <input class="input"
+                                               type="text"
+                                               x-model.trim="targetPicker.search"
+                                               @input="targetPicker.pageNo = 1"
+                                               :placeholder="`搜索${pickerTypeLabel()}名称、说明${targetPicker.draftType === 'group' ? '或成员策略' : ''}`">
+                                        <span class="badge badge-dim" x-text="`${pickerFilteredTargets().length} 条结果`"></span>
+                                    </div>
+
+                                    <template x-if="pickerFilteredTargets().length === 0">
+                                        <div class="picker-empty">
+                                            <div>没有找到匹配的<span x-text="pickerTypeLabel()"></span></div>
+                                            <div class="text-3" style="margin-top: 6px;">试试换个关键词，或者返回上一级切换执行方式。</div>
+                                        </div>
+                                    </template>
+
+                                    <div class="picker-list" x-show="pickerFilteredTargets().length > 0">
+                                        <template x-for="item in pickerPaginatedTargets()" :key="`${targetPicker.draftType}-${item.id}`">
+                                            <button type="button"
+                                                    class="picker-item"
+                                                    :class="{ 'is-selected': Number(targetPicker.draftTargetId) === Number(item.id) }"
+                                                    @click="choosePickerTarget(item.id)">
+                                                <div class="picker-item-head">
+                                                    <div style="min-width: 0; flex: 1;">
+                                                        <div class="picker-item-name" x-text="item.name"></div>
+                                                        <div class="picker-item-desc"
+                                                             x-text="item.description || (targetPicker.draftType === 'group' ? '未填写策略组说明' : '未填写策略说明')"></div>
+                                                    </div>
+                                                    <div class="picker-count"
+                                                         x-text="targetPicker.draftType === 'group'
+                                                            ? `${(item.strategy_ids || []).length} 条`
+                                                            : (item.enabled === 0 ? '已停用' : '启用中')"></div>
+                                                </div>
+                                                <div class="picker-item-extra">
+                                                    <span class="picker-pill" x-show="targetPicker.draftType === 'group'" x-text="`逻辑：${(item.match_mode || 'AND').toUpperCase()}`"></span>
+                                                    <span class="picker-pill" x-show="targetPicker.draftType === 'strategy'" x-text="item.create_mode === 'builtin' ? '内置策略' : '自定义策略'"></span>
+                                                    <template x-if="targetPicker.draftType === 'group'">
+                                                        <span class="picker-pill"
+                                                              x-text="(item.strategy_names || []).length ? `成员：${item.strategy_names.slice(0, 3).join(' / ')}${item.strategy_names.length > 3 ? '…' : ''}` : '暂无成员信息'"></span>
+                                                    </template>
+                                                </div>
+                                            </button>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <footer class="picker-footer">
+                            <div class="picker-footer-meta"
+                                 x-text="targetPicker.page === 'target'
+                                    ? `第 ${targetPicker.pageNo} / ${pickerTotalPages()} 页，每页 ${PICKER_PAGE_SIZE} 条`
+                                    : `当前默认会按 ${targetTypeLabel(targetPicker.draftType)} 进入下一步`"></div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <template x-if="targetPicker.page === 'target'">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <button type="button" class="btn btn-ghost btn-sm" @click="targetPicker.pageNo = 1" :disabled="targetPicker.pageNo === 1">首页</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" @click="changePickerPage(-1)" :disabled="targetPicker.pageNo === 1">上一页</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" @click="changePickerPage(1)" :disabled="targetPicker.pageNo >= pickerTotalPages()">下一页</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" @click="targetPicker.pageNo = pickerTotalPages()" :disabled="targetPicker.pageNo >= pickerTotalPages()">末页</button>
+                                    </div>
+                                </template>
+                                <button type="button" class="btn btn-ghost" @click="closeTargetPicker()">取消</button>
+                                <button type="button"
+                                        class="btn btn-primary"
+                                        @click="targetPicker.page === 'type' ? targetPicker.page = 'target' : applyTargetPicker()"
+                                        :disabled="targetPicker.page === 'target' && !targetPicker.draftTargetId">
+                                    <span x-text="targetPicker.page === 'type' ? '下一步' : '应用选择'"></span>
+                                </button>
+                            </div>
+                        </footer>
+                    </section>
+                </div>
+            </div>
+        </template>
+
     </div>
 
     <style>
@@ -1099,6 +2031,29 @@
         .drawer-leave { transition: transform var(--t-fast) var(--ease); }
         .drawer-leave-start { transform: translateX(0); }
         .drawer-leave-end { transform: translateX(100%); }
+
+        .picker-enter {
+            transition: transform var(--t-med) var(--ease), opacity var(--t-med) var(--ease);
+        }
+        .picker-enter-start {
+            transform: translateY(12px) scale(0.98);
+            opacity: 0;
+        }
+        .picker-enter-end {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        .picker-leave {
+            transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+        }
+        .picker-leave-start {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        .picker-leave-end {
+            transform: translateY(10px) scale(0.98);
+            opacity: 0;
+        }
     </style>
 
     <script>
@@ -1106,11 +2061,21 @@
             return {
                 // ========== 常量 ==========
                 PAGE_SIZE: 10,
+                PICKER_PAGE_SIZE: 8,
 
                 // ========== 静态 / 配置状态 ==========
                 targets: { strategies: [], groups: [] },
                 targetType: 'strategy',
                 targetId: null,
+                ignoreTargetWatch: false,
+                targetPicker: {
+                    open: false,
+                    page: 'type',
+                    draftType: 'strategy',
+                    draftTargetId: null,
+                    search: '',
+                    pageNo: 1,
+                },
                 storageKeys: {
                     stock: 'stock_ai_last_stock',
                     screener: 'stock_ai_last_screener',
@@ -1127,8 +2092,25 @@
                 isDesktop: window.matchMedia('(min-width: 960px)').matches,
                 view: 'results',          // 仅移动端用：'results' | 'history'
                 isStarting: false,
-                taskScope: 'current',
-                taskStatusFilter: 'all',
+                taskScope: 'all',
+                taskStatusFilter: 'active',
+                taskFilterOpen: false,
+                sectionStorageKey: 'stock_ai_screener_sections',
+                sectionState: {
+                    toolbar: false,
+                    status: false,
+                    tasks: false,
+                    results: false,
+                    history: false,
+                },
+                taskFilterOptions: [
+                    { value: 'active', label: '进行中', desc: '同时看排队中和运行中的任务', color: 'var(--primary)', ring: 'rgba(91, 141, 239, 0.12)' },
+                    { value: 'all', label: '全部', desc: '显示所有任务状态', color: 'var(--text-3)', ring: 'rgba(138, 154, 179, 0.08)' },
+                    { value: 'queued', label: '排队中', desc: '还没开始，正在等待执行', color: 'var(--accent)', ring: 'rgba(237, 170, 49, 0.12)' },
+                    { value: 'running', label: '运行中', desc: '已经开始执行的任务', color: 'var(--primary)', ring: 'rgba(91, 141, 239, 0.12)' },
+                    { value: 'completed', label: '已完成', desc: '已经跑完并返回结果', color: 'var(--ok)', ring: 'rgba(41, 180, 140, 0.12)' },
+                    { value: 'failed', label: '失败', desc: '执行失败，建议优先排查', color: 'var(--danger)', ring: 'rgba(239, 77, 107, 0.12)' },
+                ],
 
                 // ========== 数据状态（null 表示未加载，[] 表示空结果） ==========
                 status: null,
@@ -1176,7 +2158,10 @@
                 },
                 get displayTasks() {
                     const items = this.tasks || [];
-                    if (this.taskScope !== 'all' || this.taskStatusFilter === 'all') return items;
+                    if (this.taskStatusFilter === 'all') return items;
+                    if (this.taskStatusFilter === 'active') {
+                        return items.filter(item => item.status === 'queued' || item.status === 'running');
+                    }
                     return items.filter(item => item.status === this.taskStatusFilter);
                 },
 
@@ -1202,6 +2187,8 @@
                         }
                     } catch (_) {}
 
+                    this.restoreSectionState();
+
                     // 先加载目标、首轮数据，再开启 watch（避免 syncTargetSelection 触发双重刷新）
                     await this.loadTargets();
                     this.workspace.stock = this.readStoredJson(this.storageKeys.stock);
@@ -1224,10 +2211,17 @@
                     if (this.targetType === 'group') return this.targets.groups || [];
                     return (this.targets.strategies || []).filter(s => s.enabled !== 0);
                 },
+                targetListByType(type) {
+                    if (type === 'group') return this.targets.groups || [];
+                    return (this.targets.strategies || []).filter(s => s.enabled !== 0);
+                },
                 currentTargetName() {
                     const list = this.currentTargetList();
                     const found = list.find(x => Number(x.id) === Number(this.targetId));
                     return found ? found.name : '';
+                },
+                targetTypeLabel(type = this.targetType) {
+                    return type === 'group' ? '按策略组执行' : '按策略执行';
                 },
                 readStoredJson(key) {
                     try {
@@ -1241,6 +2235,27 @@
                     try {
                         window.localStorage.setItem(key, JSON.stringify(value));
                     } catch (_) {}
+                },
+                restoreSectionState() {
+                    const stored = this.readStoredJson(this.sectionStorageKey);
+                    if (!stored || typeof stored !== 'object') return;
+                    this.sectionState = {
+                        ...this.sectionState,
+                        ...stored,
+                    };
+                },
+                persistSectionState() {
+                    this.writeStoredJson(this.sectionStorageKey, this.sectionState);
+                },
+                isSectionCollapsed(name) {
+                    return !!this.sectionState[name];
+                },
+                toggleSection(name) {
+                    this.sectionState = {
+                        ...this.sectionState,
+                        [name]: !this.sectionState[name],
+                    };
+                    this.persistSectionState();
                 },
                 persistScreenerContext() {
                     if (!this.targetId || !this.targetType) return;
@@ -1286,6 +2301,99 @@
                     const exists = list.some(x => Number(x.id) === Number(this.targetId));
                     if (!exists) this.targetId = list[0].id;
                 },
+                syncPickerSelection() {
+                    const list = this.targetListByType(this.targetPicker.draftType);
+                    if (list.length === 0) {
+                        this.targetPicker.draftTargetId = null;
+                        return;
+                    }
+                    const exists = list.some(x => Number(x.id) === Number(this.targetPicker.draftTargetId));
+                    if (!exists) this.targetPicker.draftTargetId = list[0].id;
+                },
+                openTargetPicker(page = 'type') {
+                    this.targetPicker.open = true;
+                    this.targetPicker.page = page === 'target' ? 'target' : 'type';
+                    this.targetPicker.draftType = this.targetType || 'strategy';
+                    this.targetPicker.draftTargetId = this.targetId;
+                    this.targetPicker.search = '';
+                    this.targetPicker.pageNo = 1;
+                    this.syncPickerSelection();
+                },
+                closeTargetPicker() {
+                    this.targetPicker.open = false;
+                },
+                switchPickerType(type) {
+                    if (type !== 'strategy' && type !== 'group') return;
+                    this.targetPicker.draftType = type;
+                    this.targetPicker.search = '';
+                    this.targetPicker.pageNo = 1;
+                    this.syncPickerSelection();
+                },
+                pickerTypeLabel() {
+                    return this.targetPicker.draftType === 'group' ? '策略组' : '策略';
+                },
+                pickerTargetCount(type) {
+                    return this.targetListByType(type).length;
+                },
+                pickerFilteredTargets() {
+                    const keyword = (this.targetPicker.search || '').trim().toLowerCase();
+                    const list = this.targetListByType(this.targetPicker.draftType);
+                    if (!keyword) return list;
+                    return list.filter(item => {
+                        const parts = [
+                            item.name || '',
+                            item.description || '',
+                            item.match_mode || '',
+                            item.create_mode || '',
+                            ...(item.strategy_names || []),
+                        ];
+                        return parts.join(' ').toLowerCase().includes(keyword);
+                    });
+                },
+                pickerPaginatedTargets() {
+                    const list = this.pickerFilteredTargets();
+                    const start = (this.targetPicker.pageNo - 1) * this.PICKER_PAGE_SIZE;
+                    return list.slice(start, start + this.PICKER_PAGE_SIZE);
+                },
+                pickerTotalPages() {
+                    const total = this.pickerFilteredTargets().length;
+                    return Math.max(1, Math.ceil(total / this.PICKER_PAGE_SIZE));
+                },
+                changePickerPage(delta) {
+                    const next = this.targetPicker.pageNo + delta;
+                    this.targetPicker.pageNo = Math.min(this.pickerTotalPages(), Math.max(1, next));
+                },
+                choosePickerTarget(id) {
+                    this.targetPicker.draftTargetId = Number(id);
+                },
+                pickerDraftTarget() {
+                    const list = this.targetListByType(this.targetPicker.draftType);
+                    return list.find(item => Number(item.id) === Number(this.targetPicker.draftTargetId)) || null;
+                },
+                pickerDraftTargetMeta() {
+                    const item = this.pickerDraftTarget();
+                    if (!item) return `当前没有可用${this.pickerTypeLabel()}`;
+                    if (this.targetPicker.draftType === 'group') {
+                        const names = (item.strategy_names || []).slice(0, 3);
+                        const suffix = (item.strategy_names || []).length > 3 ? ' 等' : '';
+                        return `${(item.match_mode || 'AND').toUpperCase()} · ${(item.strategy_ids || []).length} 条策略${names.length ? ` · ${names.join(' / ')}${suffix}` : ''}`;
+                    }
+                    return item.enabled === 0 ? '已停用' : (item.description || '单条策略执行');
+                },
+                applyTargetPicker() {
+                    const nextType = this.targetPicker.draftType || 'strategy';
+                    const nextList = this.targetListByType(nextType);
+                    const nextId = nextList.some(item => Number(item.id) === Number(this.targetPicker.draftTargetId))
+                        ? Number(this.targetPicker.draftTargetId)
+                        : (nextList[0] ? Number(nextList[0].id) : null);
+                    const changed = nextType !== this.targetType || Number(nextId) !== Number(this.targetId);
+                    this.ignoreTargetWatch = true;
+                    this.targetType = nextType;
+                    this.targetId = nextId;
+                    this.ignoreTargetWatch = false;
+                    this.closeTargetPicker();
+                    if (changed) this.onTargetChange();
+                },
                 onTargetTypeChange() {
                     this.syncTargetSelection();
                     if (this.guide.active) this.guide.targetName = this.currentTargetName();
@@ -1307,6 +2415,7 @@
 
                 // ========== 状态切换：重置 + 取消 + 重新拉 ==========
                 onTargetChange() {
+                    if (this.ignoreTargetWatch) return;
                     if (this.guide.active) this.guide.targetName = this.currentTargetName();
                     this.persistScreenerContext();
                     this.gen++;
@@ -1414,7 +2523,8 @@
                     if (scope !== 'current' && scope !== 'all') return;
                     if (this.taskScope === scope) return;
                     this.taskScope = scope;
-                    this.taskStatusFilter = 'all';
+                    this.taskStatusFilter = 'active';
+                    this.taskFilterOpen = false;
                     this.latestTask = null;
                     this.tasks = null;
                     await this.refreshTaskBoardForCurrentScope();
@@ -1435,7 +2545,7 @@
                 },
 
                 async loadTasks() {
-                    const data = await this.fetchJson('tasks', '/api/tasks?' + this.buildTaskQuery(true) + '&limit=20');
+                    const data = await this.fetchJson('tasks', '/api/tasks?' + this.buildTaskQuery(true) + '&limit=100');
                     if (data) this.tasks = data.tasks || [];
                 },
 
@@ -1598,6 +2708,38 @@
                     if (task.status === 'failed') return '失败';
                     return task.status || '未知';
                 },
+                taskStatusBadgeClass(task) {
+                    if (!task) return 'badge-dim';
+                    if (task.status === 'running') return 'badge-accent';
+                    if (task.status === 'queued') return 'badge';
+                    if (task.status === 'completed') return 'badge-ok';
+                    if (task.status === 'failed') return 'badge-danger';
+                    return 'badge-dim';
+                },
+                taskStatusBadgeText(task) {
+                    if (!task) return '未知';
+                    if (task.status === 'queued') return `队列第 ${queuedTaskIndex(task.id)}`;
+                    if (task.status === 'running') return '执行中';
+                    if (task.status === 'completed') return '已完成';
+                    if (task.status === 'failed') return '失败';
+                    return task.status || '未知';
+                },
+                taskFilterBoxClass() {
+                    if (this.taskStatusFilter === 'active') return 'is-active';
+                    if (this.taskStatusFilter === 'queued') return 'is-queued';
+                    if (this.taskStatusFilter === 'running') return 'is-running';
+                    if (this.taskStatusFilter === 'completed') return 'is-completed';
+                    if (this.taskStatusFilter === 'failed') return 'is-failed';
+                    return '';
+                },
+                taskFilterLabel() {
+                    const found = this.taskFilterOptions.find(item => item.value === this.taskStatusFilter);
+                    return found ? found.label : '状态';
+                },
+                setTaskStatusFilter(value) {
+                    this.taskStatusFilter = value;
+                    this.taskFilterOpen = false;
+                },
                 taskProgressPercent(task) {
                     const total = Number((task && task.progress_total) || 0);
                     const current = Number((task && task.progress_current) || 0);
@@ -1626,13 +2768,18 @@
                     return `/?${params.toString()}`;
                 },
                 downloadMissLog(item) {
-                    if (!item || !item.run_date || !item.run_time) return;
+                    if (!this.canDownloadMissLog(item)) return;
                     const params = new URLSearchParams();
                     if (item.target_type) params.set('target_type', item.target_type);
                     if (item.target_id) params.set('target_id', item.target_id);
                     if (item.run_token) params.set('run_token', item.run_token);
                     const url = `/api/screener/history/${encodeURIComponent(item.run_date)}/${encodeURIComponent(item.run_time)}/miss-log.txt?${params.toString()}`;
                     window.open(url, '_blank');
+                },
+                canDownloadMissLog(item) {
+                    if (!item || !item.run_date || !item.run_time) return false;
+                    if (typeof item.has_miss_log === 'boolean') return item.has_miss_log;
+                    return Number(item.raw_miss_log_count || 0) > 0;
                 },
             };
         }

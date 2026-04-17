@@ -16,6 +16,7 @@ import pandas as pd
 from app.config import has_database_config, settings
 from app.repositories.screening_repository import ScreeningRepository
 from app.core.screening_core import SwitchingMarketDataSource, stock_code_to_symbol
+from app.services.http_client_pool import get_sync_http_client
 
 
 screening_repository = ScreeningRepository(settings.db_path)
@@ -160,8 +161,8 @@ def _fetch_tencent_klines(symbol: str, period: str, bars: Optional[int] = None, 
         f"?_var=kline_{config['period_key']}{adjust}&param={symbol},{config['period_key']},,,{request_bars},{adjust}&r=0.1"
     )
     try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(url)
+        client = get_sync_http_client(timeout=15.0)
+        resp = client.get(url)
         json_start = resp.text.find("=") + 1
         data = json.loads(resp.text[json_start:])
         if data.get("code") != 0:
@@ -197,13 +198,14 @@ def _fetch_eastmoney_klines(symbol: str, period: str, bars: Optional[int] = None
         "lmt": str(bars or config["default_bars"]),
     }
     try:
-        with httpx.Client(
-            timeout=15,
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"},
-        ) as client:
-            response = client.get("https://push2his.eastmoney.com/api/qt/stock/kline/get", params=params)
-            response.raise_for_status()
-            payload = response.json()
+        client = get_sync_http_client(
+            timeout=15.0,
+            user_agent="Mozilla/5.0",
+            referer="https://quote.eastmoney.com/",
+        )
+        response = client.get("https://push2his.eastmoney.com/api/qt/stock/kline/get", params=params)
+        response.raise_for_status()
+        payload = response.json()
         rows = (payload.get("data") or {}).get("klines") or []
         result = []
         for row in rows:
@@ -251,7 +253,10 @@ def get_kline_rows(
         remote_rows = fetch_remote_klines(stock_code, period, limit, adjust=adjust)
         if remote_rows:
             if db_enabled:
-                screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+                try:
+                    screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+                except Exception:
+                    pass
             return remote_rows[-limit:]
         if not db_enabled:
             return []
@@ -262,7 +267,10 @@ def get_kline_rows(
     remote_rows = fetch_remote_klines(stock_code, period, limit, adjust=adjust)
     if remote_rows:
         if db_enabled:
-            screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+            try:
+                screening_repository.save_cached_klines(stock_code, symbol, period, remote_rows, adjust=adjust)
+            except Exception:
+                pass
         return remote_rows[-limit:]
     return []
 
@@ -281,7 +289,11 @@ def sync_stock_kline_cache(stock_code: str, periods: Optional[list] = None) -> d
         if not rows:
             errors.append(period)
             continue
-        screening_repository.save_cached_klines(stock_code, symbol, period, rows)
+        try:
+            screening_repository.save_cached_klines(stock_code, symbol, period, rows)
+        except Exception:
+            errors.append(f"{period}:cache_write_failed")
+            continue
         updated += 1
     return {"stock_code": stock_code, "updated": updated, "error_periods": errors}
 
@@ -326,8 +338,12 @@ def get_stock_info(stock_code: str) -> dict:
         return cached
     try:
         symbol = _stock_code_to_market_symbol(stock_code)
-        with httpx.Client(timeout=10) as client:
-            resp = client.get(f"https://hq.sinajs.cn/list={symbol}", headers={"Referer": "https://finance.sina.com.cn"})
+        client = get_sync_http_client(
+            timeout=10.0,
+            user_agent="Mozilla/5.0",
+            referer="https://finance.sina.com.cn",
+        )
+        resp = client.get(f"https://hq.sinajs.cn/list={symbol}")
         result = parse_stock_info_payload(stock_code, resp.text)
         cache_set(cache_key, result, settings.stock_info_ttl)
         return result

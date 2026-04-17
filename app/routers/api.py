@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import codecs
 import json
 from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from db import compat as db
 from app.core.strategy_engine import build_strategy_context, get_strategy_contract, run_strategy_code
@@ -58,9 +59,12 @@ def _task_list_item(task: dict) -> dict:
         "result_text": task.get("result_text", ""),
         "matched_count": result.get("matched_count", 0),
         "total_stocks": result.get("total_stocks", 0),
+        "run_date": result.get("run_date", ""),
+        "run_time": result.get("run_time", ""),
         "failure_summary": result.get("failure_summary", ""),
         "ai_summary": result.get("ai_summary", ""),
         "raw_miss_log_count": int(result.get("raw_miss_log_count") or 0),
+        "has_miss_log": int(result.get("raw_miss_log_count") or 0) > 0,
         "error_text": task.get("error_text", ""),
         "created_at": task.get("created_at", ""),
         "started_at": task.get("started_at", ""),
@@ -503,6 +507,7 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
     rows = screening_repository.query_runs(target_type=target_type, target_id=target_id, limit=30, completed_only=True)
     history = []
     for item in rows:
+        miss_log_text = str(item.get("miss_log_text") or "").strip()
         history.append(
             {
                 "run_token": item.get("run_token", ""),
@@ -517,9 +522,12 @@ async def get_screener_history(target_type: Optional[str] = None, target_id: Opt
                 "status": item["status"],
                 "failure_summary": item.get("failure_summary", ""),
                 "ai_summary": latest_task_result.get("ai_summary", "") if item.get("run_token", "") == (latest_task or {}).get("run_token", "") else "",
-                "raw_miss_log_count": int(latest_task_result.get("raw_miss_log_count") or 0)
-                if item.get("run_token", "") == (latest_task or {}).get("run_token", "")
-                else 0,
+                "raw_miss_log_count": (
+                    int(item.get("matched_count") or 0) < int(item.get("total_stocks") or 0)
+                    if miss_log_text
+                    else 0
+                ),
+                "has_miss_log": bool(miss_log_text),
             }
         )
     return {"history": history}
@@ -579,8 +587,9 @@ async def download_history_miss_log(
     safe_target_name = "".join(ch if ch.isascii() and (ch.isalnum() or ch in ("-", "_")) else "_" for ch in target_name)
     filename = f"{safe_target_name}_{run_date}_{run_time.replace(':', '-')}_miss_log.txt"
     utf8_filename = quote(f"{target_name}_{run_date}_{run_time.replace(':', '-')}_miss_log.txt")
-    return PlainTextResponse(
-        miss_log_text,
+    # Add UTF-8 BOM so local editors reliably detect Chinese text encoding.
+    return Response(
+        content=codecs.BOM_UTF8 + miss_log_text.encode("utf-8"),
         media_type="text/plain; charset=utf-8",
         headers={
             "Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{utf8_filename}"

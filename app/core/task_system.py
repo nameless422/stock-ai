@@ -8,6 +8,27 @@ from db import compat as db
 
 
 TaskHandler = Callable[[dict, "TaskExecutionContext"], dict]
+TASK_LIST_COLUMNS = """
+    id,
+    task_type,
+    queue_name,
+    status,
+    priority,
+    run_token,
+    target_type,
+    target_id,
+    target_name,
+    progress_current,
+    progress_total,
+    progress_message,
+    result_text,
+    result_payload,
+    error_text,
+    started_at,
+    completed_at,
+    created_at,
+    updated_at
+"""
 
 
 def _now_text() -> str:
@@ -80,7 +101,7 @@ class TaskStore:
         conn = db.connect(self.db_path)
         conn.row_factory = db.Row
         c = conn.cursor()
-        sql = "SELECT * FROM task_jobs WHERE 1 = 1"
+        sql = f"SELECT {TASK_LIST_COLUMNS} FROM task_jobs WHERE 1 = 1"
         params = []
         if task_type:
             sql += " AND task_type = ?"
@@ -135,7 +156,7 @@ class TaskStore:
         conn = db.connect(self.db_path)
         conn.row_factory = db.Row
         c = conn.cursor()
-        sql = "SELECT * FROM task_jobs WHERE 1 = 1"
+        sql = f"SELECT {TASK_LIST_COLUMNS} FROM task_jobs WHERE 1 = 1"
         params = []
         if task_type:
             sql += " AND task_type = ?"

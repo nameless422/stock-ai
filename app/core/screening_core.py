@@ -1,12 +1,28 @@
 import json
 from collections import Counter
+from datetime import datetime
 import threading
+import time
 from typing import Optional, Protocol
 from urllib.request import Request, urlopen
 
 import httpx
 
+from app.config import has_database_config, settings
+from app.repositories.screening_repository import ScreeningRepository
+from app.services.http_client_pool import get_sync_http_client
 from .strategy_engine import build_strategy_context, run_strategy_code
+
+
+screening_repository = ScreeningRepository(settings.db_path)
+
+
+def is_market_open() -> bool:
+    current = datetime.now(settings.market_tz)
+    if current.weekday() >= 5:
+        return False
+    current_minutes = current.hour * 60 + current.minute
+    return (9 * 60 + 30) <= current_minutes < (11 * 60 + 30) or (13 * 60) <= current_minutes < (15 * 60)
 
 
 class MarketDataSource(Protocol):
@@ -92,9 +108,9 @@ class TencentMarketDataSource:
     def _fetch_klines(self, symbol: str, param_suffix: str, data_key: str) -> list:
         try:
             url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_data&param={symbol},{param_suffix}&r=0.1"
-            with httpx.Client(timeout=10) as client:
-                resp = client.get(url)
-                text = resp.text
+            client = get_sync_http_client(timeout=10.0)
+            resp = client.get(url)
+            text = resp.text
             json_start = text.find("=") + 1
             data = json.loads(text[json_start:])
             if data.get("code") != 0:
@@ -131,16 +147,27 @@ class EastMoneyMarketDataSource:
 
         with httpx.Client(timeout=20, headers=headers) as client:
             while True:
-                response = client.get(
-                    "https://push2.eastmoney.com/api/qt/clist/get",
-                    params={**params, "pn": str(page)},
-                )
-                response.raise_for_status()
-                payload = response.json()
+                payload = None
+                last_error = None
+                for attempt in range(3):
+                    try:
+                        response = client.get(
+                            "https://push2.eastmoney.com/api/qt/clist/get",
+                            params={**params, "pn": str(page)},
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        time.sleep(0.3 * (attempt + 1))
+                if payload is None:
+                    raise last_error or RuntimeError("获取东方财富股票列表失败")
                 data = payload.get("data") or {}
                 rows = data.get("diff") or []
                 if not rows:
                     break
+                before_count = len(stocks)
 
                 for item in rows:
                     code = str(item.get("f12") or "").strip()
@@ -150,9 +177,11 @@ class EastMoneyMarketDataSource:
                         stocks.append({"code": code, "name": name})
 
                 total = int(data.get("total") or 0)
-                if len(stocks) >= total or len(rows) < page_size:
+                if len(stocks) >= total or len(stocks) == before_count:
                     break
                 page += 1
+                if page > 200:
+                    break
 
         return stocks
 
@@ -177,19 +206,17 @@ class EastMoneyMarketDataSource:
             "lmt": str(limit),
         }
         try:
-            with httpx.Client(
-                timeout=15,
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": "https://quote.eastmoney.com/",
-                },
-            ) as client:
-                response = client.get(
-                    "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-                    params=params,
-                )
-                response.raise_for_status()
-                payload = response.json()
+            client = get_sync_http_client(
+                timeout=15.0,
+                user_agent="Mozilla/5.0",
+                referer="https://quote.eastmoney.com/",
+            )
+            response = client.get(
+                "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
             rows = (payload.get("data") or {}).get("klines") or []
             result = []
             for row in rows:
@@ -265,9 +292,57 @@ class StockScreeningFilter(Protocol):
 
 
 class StrategyScreeningFilter:
-    def __init__(self, data_source: MarketDataSource, target_info: dict):
+    def __init__(self, data_source: MarketDataSource, target_info: dict, cache_repository: Optional[ScreeningRepository] = None):
         self.data_source = data_source
         self.target_info = target_info
+        self.cache_repository = cache_repository if cache_repository is not None else screening_repository
+
+    def _load_cached_klines(self, code: str, period: str, limit: int) -> tuple[list, dict]:
+        if self.cache_repository and has_database_config():
+            cached_rows = self.cache_repository.load_cached_klines(code, period, limit=limit)
+            if cached_rows:
+                return cached_rows, {
+                    "source": "cache",
+                    "rows": len(cached_rows),
+                    "error": "",
+                }
+        return [], {}
+
+    def _load_remote_klines(self, code: str, symbol: str, period: str, limit: int) -> tuple[list, dict]:
+        if period == "daily":
+            rows = self.data_source.get_daily_klines(symbol, limit)
+            meta_method = "get_daily_klines"
+        else:
+            rows = self.data_source.get_weekly_klines(symbol)
+            if rows:
+                rows = rows[-limit:]
+            meta_method = "get_weekly_klines"
+
+        meta = {}
+        if hasattr(self.data_source, "get_last_source_meta"):
+            meta = self.data_source.get_last_source_meta(meta_method)
+        if rows and self.cache_repository and has_database_config():
+            try:
+                self.cache_repository.save_cached_klines(code, symbol, period, rows)
+            except Exception as exc:
+                meta = {
+                    **meta,
+                    "cache_write_error": str(exc),
+                }
+        return rows, meta
+
+    def _load_klines(self, code: str, symbol: str, period: str, limit: int) -> tuple[list, dict]:
+        remote_first = is_market_open()
+        if remote_first:
+            rows, meta = self._load_remote_klines(code, symbol, period, limit)
+            if rows:
+                return rows, meta
+            return self._load_cached_klines(code, period, limit)
+
+        rows, meta = self._load_cached_klines(code, period, limit)
+        if rows:
+            return rows, meta
+        return self._load_remote_klines(code, symbol, period, limit)
 
     def evaluate(self, code: str, name: str) -> dict:
         result = {
@@ -292,18 +367,13 @@ class StrategyScreeningFilter:
                 result["reason"] = "不支持的股票代码"
                 return result
 
-            daily_klines = self.data_source.get_daily_klines(symbol, 180)
-            weekly_klines = self.data_source.get_weekly_klines(symbol)
+            daily_klines, daily_source_meta = self._load_klines(code, symbol, "daily", 180)
+            weekly_klines, weekly_source_meta = self._load_klines(code, symbol, "weekly", 60)
             context = build_strategy_context(
                 {"code": code, "name": name, "symbol": symbol},
                 daily_klines,
                 weekly_klines,
             )
-            daily_source_meta = {}
-            weekly_source_meta = {}
-            if hasattr(self.data_source, "get_last_source_meta"):
-                daily_source_meta = self.data_source.get_last_source_meta("get_daily_klines")
-                weekly_source_meta = self.data_source.get_last_source_meta("get_weekly_klines")
 
             strategy_results = []
             for strategy in self.target_info.get("strategies", []):

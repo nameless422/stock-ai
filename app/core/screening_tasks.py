@@ -1,5 +1,5 @@
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 import json
 import os
@@ -222,17 +222,82 @@ class ScreeningTaskHandler:
             batch_size = min(self.submit_batch, total)
             max_workers = min(self.max_workers, total)
             context.log(f"执行参数: workers={max_workers}, batch={batch_size}, save_interval={self.save_interval}")
+            stock_iter = iter(stocks)
 
-            for start in range(0, total, batch_size):
-                stock_batch = stocks[start:start + batch_size]
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_map = {
-                        executor.submit(stock_filter.evaluate, stock["code"], stock["name"]): stock
-                        for stock in stock_batch
-                    }
+            def submit_next(executor: ThreadPoolExecutor, future_map: dict) -> bool:
+                try:
+                    stock = next(stock_iter)
+                except StopIteration:
+                    return False
+                future = executor.submit(stock_filter.evaluate, stock["code"], stock["name"])
+                future_map[future] = stock
+                return True
 
-                    for future in as_completed(future_map):
-                        stock = future_map[future]
+            def handle_item(item: dict) -> None:
+                nonlocal processed, save_counter
+                processed += 1
+                if item.get("pass"):
+                    results.append(item)
+                    save_counter += 1
+                else:
+                    reason = str(item.get("reason", "")).strip() or "未命中"
+                    failure_reason_counts[reason] += 1
+                    miss_log = f"{item.get('code', '-')}\t{item.get('name', '-')}\t{reason}"
+                    context.log(miss_log, level="warn")
+                    if len(miss_log_samples) < 120:
+                        miss_log_samples.append(miss_log)
+                    miss_entries.append(self._build_miss_log_entry(item))
+                    if item.get("error"):
+                        error_detail = str(item.get("traceback") or item.get("error") or reason).strip()
+                        context.log(f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{error_detail}", level="error")
+                    for strategy_result in ((item.get("payload") or {}).get("strategy_results") or []):
+                        if not strategy_result.get("error"):
+                            continue
+                        strategy_error = str(
+                            strategy_result.get("traceback")
+                            or strategy_result.get("reason")
+                            or "策略执行异常"
+                        ).strip()
+                        context.log(
+                            f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{strategy_result.get('strategy_name', '-')}\t{strategy_error}",
+                            level="error",
+                        )
+
+                if processed % 10 == 0 or processed >= total:
+                    context.set_progress(
+                        processed,
+                        total,
+                        f"已处理 {processed}/{total}，命中 {len(results)}，未命中原因 {build_failure_summary(failure_reason_counts)}",
+                    )
+
+                if processed % 100 == 0 or processed >= total:
+                    context.log(f"处理进度 {processed}/{total}，当前命中 {len(results)}")
+
+                if save_counter >= self.save_interval:
+                    self.run_saver(
+                        run_token,
+                        run_date,
+                        run_time,
+                        total,
+                        len(results),
+                        "running",
+                        results,
+                        target_info=target_info,
+                        failure_summary=build_failure_summary(failure_reason_counts),
+                    )
+                    save_counter = 0
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {}
+                initial_submit = min(batch_size, total)
+                for _ in range(initial_submit):
+                    if not submit_next(executor, future_map):
+                        break
+
+                while future_map:
+                    done, _ = wait(set(future_map.keys()), return_when=FIRST_COMPLETED)
+                    for future in done:
+                        stock = future_map.pop(future)
                         try:
                             item = future.result()
                         except Exception as exc:
@@ -243,58 +308,10 @@ class ScreeningTaskHandler:
                                 "reason": str(exc),
                                 "error": str(exc),
                             }
+                        handle_item(item)
 
-                        processed += 1
-                        if item.get("pass"):
-                            results.append(item)
-                            save_counter += 1
-                        else:
-                            reason = str(item.get("reason", "")).strip() or "未命中"
-                            failure_reason_counts[reason] += 1
-                            miss_log = f"{item.get('code', '-')}\t{item.get('name', '-')}\t{reason}"
-                            context.log(miss_log, level="warn")
-                            if len(miss_log_samples) < 120:
-                                miss_log_samples.append(miss_log)
-                            miss_entries.append(self._build_miss_log_entry(item))
-                            if item.get("error"):
-                                error_detail = str(item.get("traceback") or item.get("error") or reason).strip()
-                                context.log(f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{error_detail}", level="error")
-                            for strategy_result in ((item.get("payload") or {}).get("strategy_results") or []):
-                                if not strategy_result.get("error"):
-                                    continue
-                                strategy_error = str(
-                                    strategy_result.get("traceback")
-                                    or strategy_result.get("reason")
-                                    or "策略执行异常"
-                                ).strip()
-                                context.log(
-                                    f"ERROR\t{item.get('code', '-')}\t{item.get('name', '-')}\t{strategy_result.get('strategy_name', '-')}\t{strategy_error}",
-                                    level="error",
-                                )
-
-                        if processed % 10 == 0 or processed >= total:
-                            context.set_progress(
-                                processed,
-                                total,
-                                f"已处理 {processed}/{total}，命中 {len(results)}，未命中原因 {build_failure_summary(failure_reason_counts)}",
-                            )
-
-                        if processed % 100 == 0 or processed >= total:
-                            context.log(f"处理进度 {processed}/{total}，当前命中 {len(results)}")
-
-                        if save_counter >= self.save_interval:
-                            self.run_saver(
-                                run_token,
-                                run_date,
-                                run_time,
-                                total,
-                                len(results),
-                                "running",
-                                results,
-                                target_info=target_info,
-                                failure_summary=build_failure_summary(failure_reason_counts),
-                            )
-                            save_counter = 0
+                    while len(future_map) < batch_size and submit_next(executor, future_map):
+                        pass
 
             results.sort(key=lambda item: item.get("current_vol", 0), reverse=True)
             failure_summary = build_failure_summary(failure_reason_counts)

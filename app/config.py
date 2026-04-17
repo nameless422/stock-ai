@@ -12,8 +12,8 @@ class Settings:
     base_dir: Path = BASE_DIR
     db_path: str = os.getenv("STOCK_AI_DB_URL", "")
     web_concurrency: int = max(1, min(8, int(os.getenv("WEB_CONCURRENCY", "2"))))
-    screening_max_workers: int = max(4, min(16, int(os.getenv("SCREENING_MAX_WORKERS", "8"))))
-    screening_submit_batch: int = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "100")))
+    screening_max_workers: int = max(4, min(16, int(os.getenv("SCREENING_MAX_WORKERS", "12"))))
+    screening_submit_batch: int = max(50, int(os.getenv("SCREENING_SUBMIT_BATCH", "240")))
     screening_save_interval: int = max(20, int(os.getenv("SCREENING_SAVE_INTERVAL", "50")))
     stock_info_ttl: float = float(os.getenv("STOCK_INFO_TTL", "5"))
     kline_ttl: float = float(os.getenv("KLINE_TTL", "20"))
