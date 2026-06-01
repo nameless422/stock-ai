@@ -139,6 +139,8 @@ build_archive() {
     --exclude='.venv' \
     --exclude='.mypy_cache' \
     --exclude='__pycache__' \
+    --exclude='.env' \
+    --exclude='.env.*' \
     --exclude='.env.remote-secrets' \
     --exclude='.DS_Store' \
     --exclude='._*' \
