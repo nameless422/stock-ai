@@ -5,6 +5,15 @@ BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 cd "$BASE_DIR"
 
+for env_file in .env .env.local; do
+  if [ -f "$env_file" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+  fi
+done
+
 if [ -z "${STOCK_AI_DB_URL:-}" ]; then
   echo "Missing STOCK_AI_DB_URL"
   echo "Example:"

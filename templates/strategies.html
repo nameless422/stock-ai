@@ -175,12 +175,15 @@
         .drawer-form {
             display: flex;
             flex-direction: column;
-            height: 100%;
+            flex: 1 1 auto;
+            min-height: 0;
         }
         .drawer-form-body {
             flex: 1;
+            min-height: 0;
             padding: var(--sp-4) var(--sp-5);
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .drawer-form-footer {
             padding: var(--sp-3) var(--sp-5);
@@ -189,6 +192,8 @@
             justify-content: flex-end;
             gap: var(--sp-2);
             flex-shrink: 0;
+            background: var(--card);
+            padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
         }
 
         /* 创建方式 segmented */
@@ -381,6 +386,32 @@
             .drawer-leave-end {
                 transform: translateY(100%);
             }
+            .drawer-form-body {
+                padding: var(--sp-3) var(--sp-3) var(--sp-5);
+            }
+            .drawer-form-footer {
+                justify-content: stretch;
+                padding: var(--sp-3);
+                padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+            }
+            .drawer-form-footer .btn {
+                flex: 1 1 0;
+                min-width: 0;
+            }
+            .mode-seg {
+                width: 100%;
+            }
+            .mode-seg-btn {
+                flex: 1 1 0;
+                justify-content: center;
+                padding-inline: var(--sp-2);
+            }
+            .ai-actions .btn {
+                flex: 1 1 100%;
+            }
+            .code-editor {
+                min-height: 220px;
+            }
         }
     </style>
 </head>
@@ -516,7 +547,7 @@
 
             <div class="pager" x-show="strategies && strategies.length > PAGE_SIZE">
                 <div class="pager-info">
-                    共 <span x-text="strategies.length"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
+                    共 <span x-text="strategies ? strategies.length : 0"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
                 </div>
                 <div class="pager-actions">
                     <button class="btn btn-ghost btn-sm" @click="strategiesPage = 1" :disabled="strategiesPage === 1">首页</button>
@@ -580,7 +611,7 @@
 
             <div class="pager" x-show="groups && groups.length > PAGE_SIZE">
                 <div class="pager-info">
-                    共 <span x-text="groups.length"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
+                    共 <span x-text="groups ? groups.length : 0"></span> 条，每页 <span x-text="PAGE_SIZE"></span> 条
                 </div>
                 <div class="pager-actions">
                     <button class="btn btn-ghost btn-sm" @click="groupsPage = 1" :disabled="groupsPage === 1">首页</button>
@@ -839,7 +870,7 @@
                             <button type="button" class="btn btn-ghost" @click="maybeCloseEditor()">取消</button>
                             <button type="submit" class="btn btn-primary" :disabled="editor.saving || llm.running">
                                 <template x-if="editor.saving"><span class="spinner spinner-on-primary"></span></template>
-                                <span x-text="editor.saving ? '保存中…' : '保存'"></span>
+                                <span x-text="editor.saving ? '保存中…' : (editor.kind === 'group' ? '保存策略组' : '保存策略')"></span>
                             </button>
                         </footer>
                     </form>

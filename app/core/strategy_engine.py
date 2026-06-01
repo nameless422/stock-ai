@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import ast
+import math
+import symtable
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -222,42 +225,157 @@ def get_strategy_contract() -> Dict[str, Any]:
             "score": "number，可选，用于排序或辅助说明",
             "metrics": "object，可选，附加数值指标，会写入结果详情",
         },
+        "helpers": [
+            {"name": "math", "description": "Python 标准 math 模块，已预置，可直接用 math.isnan/math.isfinite 等"},
+            {"name": "np", "description": "numpy，已预置，优先使用普通 list 计算，复杂计算再用"},
+            {"name": "pd", "description": "pandas，已预置，优先使用普通 list 计算，复杂计算再用"},
+        ],
+        "constraints": [
+            "只定义 run_strategy(context)，不要在顶层执行其他代码",
+            "不要写 import / from import；math、np、pd 已由系统预置",
+            "不要调用 backtrader、talib、requests、os、sys 等外部包或系统能力",
+        ],
         "template": STRATEGY_TEMPLATE,
     }
 
 
-SAFE_GLOBALS = {
-    "__builtins__": {
-        "abs": abs,
-        "all": all,
-        "any": any,
-        "bool": bool,
-        "dict": dict,
-        "enumerate": enumerate,
-        "float": float,
-        "int": int,
-        "len": len,
-        "list": list,
-        "max": max,
-        "min": min,
-        "range": range,
-        "round": round,
-        "sorted": sorted,
-        "str": str,
-        "sum": sum,
-        "Exception": Exception,
-        "TypeError": TypeError,
-        "ValueError": ValueError,
-        "zip": zip,
-    },
+SAFE_BUILTINS = {
+    "abs": abs,
+    "all": all,
+    "any": any,
+    "bool": bool,
+    "dict": dict,
+    "enumerate": enumerate,
+    "float": float,
+    "int": int,
+    "len": len,
+    "list": list,
+    "max": max,
+    "min": min,
+    "range": range,
+    "round": round,
+    "sorted": sorted,
+    "str": str,
+    "sum": sum,
+    "Exception": Exception,
+    "TypeError": TypeError,
+    "ValueError": ValueError,
+    "zip": zip,
+}
+
+SAFE_HELPERS = {
+    "math": math,
     "np": np,
     "pd": pd,
 }
+
+SAFE_GLOBALS = {
+    "__builtins__": SAFE_BUILTINS,
+    **SAFE_HELPERS,
+}
+
+
+ALLOWED_GLOBAL_NAMES = set(SAFE_BUILTINS) | set(SAFE_HELPERS)
+DANGEROUS_CALL_NAMES = {
+    "__import__",
+    "compile",
+    "delattr",
+    "dir",
+    "eval",
+    "exec",
+    "getattr",
+    "globals",
+    "help",
+    "input",
+    "locals",
+    "open",
+    "setattr",
+    "vars",
+}
+
+
+def _call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _call_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return ""
+
+
+def _find_run_strategy_table(table: symtable.SymbolTable) -> symtable.SymbolTable | None:
+    for child in table.get_children():
+        if child.get_name() == "run_strategy" and child.get_type() == "function":
+            return child
+    return None
+
+
+def _collect_invalid_globals(table: symtable.SymbolTable, errors: List[str]) -> None:
+    for symbol in table.get_symbols():
+        name = symbol.get_name()
+        if symbol.is_referenced() and symbol.is_global() and name not in ALLOWED_GLOBAL_NAMES:
+            errors.append(f"不允许引用未预置的全局名称 `{name}`")
+    for child in table.get_children():
+        _collect_invalid_globals(child, errors)
+
+
+def validate_strategy_code(code: str) -> List[str]:
+    errors: List[str] = []
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return [f"Python 语法错误: {exc.msg} (line {exc.lineno})"]
+
+    run_defs = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_strategy"]
+    if len(run_defs) != 1:
+        errors.append("必须且只能定义一个 run_strategy(context) 函数")
+        run_def = None
+    else:
+        run_def = run_defs[0]
+        args = run_def.args
+        arg_names = [arg.arg for arg in args.args]
+        if arg_names != ["context"] or args.vararg or args.kwarg or args.kwonlyargs:
+            errors.append("run_strategy 必须只接收一个 context 参数")
+
+    for node in tree.body:
+        is_docstring = isinstance(node, ast.Expr) and isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str)
+        if is_docstring or node is run_def:
+            continue
+        errors.append("策略代码只能在顶层定义 run_strategy(context)，不要写 import、常量赋值或其他顶层语句")
+        break
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            errors.append("不要写 import / from import；math、np、pd 已由系统预置，其他外部包不允许调用")
+        elif isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef)):
+            errors.append("策略代码不要定义 class 或 async 函数")
+        elif isinstance(node, ast.Call):
+            call_name = _call_name(node.func)
+            root_name = call_name.split(".", 1)[0]
+            if root_name in DANGEROUS_CALL_NAMES:
+                errors.append(f"不允许调用 `{call_name}`")
+
+    try:
+        table = symtable.symtable(code, "<strategy>", "exec")
+        run_table = _find_run_strategy_table(table)
+        if run_table is not None:
+            _collect_invalid_globals(run_table, errors)
+    except SyntaxError:
+        pass
+
+    return list(dict.fromkeys(errors))
 
 
 def run_strategy_code(code: str, context: Dict[str, Any]) -> Dict[str, Any]:
     local_vars: Dict[str, Any] = {}
     try:
+        validation_errors = validate_strategy_code(code)
+        if validation_errors:
+            return {
+                "pass": False,
+                "reason": "策略代码校验失败: " + "；".join(validation_errors[:3]),
+                "error": True,
+            }
         exec(code, SAFE_GLOBALS.copy(), local_vars)
         func = local_vars.get("run_strategy")
         if not callable(func):

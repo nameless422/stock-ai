@@ -2,9 +2,9 @@ from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 import json
-import os
 
 import httpx
+from .llm_provider import resolve_llm_provider
 from .screening_core import StrategyScreeningFilter, SwitchingMarketDataSource, build_failure_summary
 
 
@@ -26,21 +26,10 @@ class ScreeningTaskHandler:
         self.data_source_factory = data_source_factory
 
     def _build_ai_summary(self, target_info: dict, total: int, matched_count: int, failure_reason_counts: Counter, miss_log_samples: list[str]) -> str:
-        api_key = os.getenv("MINIMAX_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        try:
+            llm_config = resolve_llm_provider()
+        except ValueError:
             return ""
-
-        if os.getenv("MINIMAX_API_KEY"):
-            base_url = (os.getenv("MINIMAX_API_BASE") or os.getenv("LLM_API_BASE") or "https://api.minimax.io/v1").rstrip("/")
-            model = os.getenv("MINIMAX_MODEL") or os.getenv("LLM_MODEL") or "MiniMax-M2.5"
-        else:
-            base_url = (
-                os.getenv("LLM_API_BASE")
-                or os.getenv("OPENAI_BASE_URL")
-                or os.getenv("OPENAI_API_BASE")
-                or "https://api.openai.com/v1"
-            ).rstrip("/")
-            model = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
 
         reasons_text = "\n".join(
             f"- {reason}: {count}"
@@ -64,19 +53,22 @@ class ScreeningTaskHandler:
                 ),
             },
         ]
+        payload = {
+            "model": llm_config.model,
+            "messages": messages,
+            "temperature": 0.1,
+        }
+        if llm_config.provider == "deepseek":
+            payload["thinking"] = {"type": "disabled"}
         try:
             with httpx.Client(timeout=60) as client:
                 response = client.post(
-                    f"{base_url}/chat/completions",
+                    f"{llm_config.base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {api_key}",
+                        "Authorization": f"Bearer {llm_config.api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": model,
-                        "messages": messages,
-                        "temperature": 0.1,
-                    },
+                    json=payload,
                 )
                 response.raise_for_status()
             data = response.json()

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import os
+import re
 from time import sleep
 
 import httpx
 
 from app.config import settings
+from app.core.llm_provider import resolve_llm_provider
 from app.core.strategy_engine import (
     build_strategy_context,
     get_strategy_contract,
     run_strategy_code,
+    validate_strategy_code,
 )
 from app.repositories.strategy_repository import StrategyRepository
 
@@ -82,23 +84,7 @@ def resolve_screening_target(target_type: str | None = None, target_id: int | No
 
 
 def build_strategy_generation_context(prompt_text: str) -> dict:
-    minimax_api_key = os.getenv("MINIMAX_API_KEY")
-    llm_api_key = os.getenv("LLM_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    api_key = minimax_api_key or llm_api_key or openai_api_key
-    if not api_key:
-        raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
-    if minimax_api_key and api_key == minimax_api_key:
-        base_url = (os.getenv("MINIMAX_API_BASE") or os.getenv("LLM_API_BASE") or "https://api.minimax.io/v1").rstrip("/")
-        model = os.getenv("MINIMAX_MODEL") or os.getenv("LLM_MODEL") or "MiniMax-M2.5"
-    else:
-        base_url = (
-            os.getenv("LLM_API_BASE")
-            or os.getenv("OPENAI_BASE_URL")
-            or os.getenv("OPENAI_API_BASE")
-            or "https://api.openai.com/v1"
-        ).rstrip("/")
-        model = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+    llm_config = resolve_llm_provider()
 
     contract = get_strategy_contract()
     allowed_fields = [
@@ -156,14 +142,19 @@ def build_strategy_generation_context(prompt_text: str) -> dict:
         "context.close",
         "backtrader",
         "talib / ta-lib",
+        "import math / from math import ...",
+        "requests / os / sys / pathlib / subprocess",
     ]
     allowed_fields_text = "\n".join(f"- {item}" for item in allowed_fields)
     forbidden_fields_text = "\n".join(f"- {item}" for item in forbidden_fields)
+    helpers_text = "\n".join(f"- {item['name']}: {item['description']}" for item in contract.get("helpers", []))
+    constraints_text = "\n".join(f"- {item}" for item in contract.get("constraints", []))
     system_prompt = (
         "你是资深量化工程师。请根据用户要求输出可直接执行的 Python 策略代码。"
         "只能返回代码，不要解释，不要 Markdown，不要输出 <think>。"
         "必须定义 run_strategy(context) 函数，且只能使用项目已有的 context 字典结构。"
-        "不要使用 backtrader、talib、context.symbol、context.get_close 之类项目中不存在的 API。"
+        "不要写 import 或 from import。"
+        "不要使用 backtrader、talib、requests、os、sys、context.symbol、context.get_close 之类项目中不存在的 API。"
     )
     user_prompt = (
         f"需求：{prompt_text}\n"
@@ -174,55 +165,86 @@ def build_strategy_generation_context(prompt_text: str) -> dict:
         "3. 必须使用 context['a']['b'] 这种字典访问方式。\n"
         "4. 返回 dict，至少包含 pass(bool) 和 reason(str)，可选 score、metrics。\n"
         "5. 数据不足时直接返回 pass=False 和明确原因。\n"
-        "6. 严禁使用下面这些不存在或不允许的字段/库：\n"
+        "6. 不要写任何 import / from import；如果需要数学函数，下面的 helper 已经预置，可直接使用：\n"
+        f"{helpers_text}\n"
+        "7. 还要遵守这些执行限制：\n"
+        f"{constraints_text}\n"
+        "8. 严禁使用下面这些不存在或不允许的字段/库：\n"
         f"{forbidden_fields_text}\n"
-        "7. 参考模板结构如下：\n"
+        "9. 参考模板结构如下：\n"
         f"{contract['template']}\n"
         "现在只返回符合这些约束的完整 Python 代码。"
     )
     return {
-        "model": model,
-        "base_url": base_url,
+        "model": llm_config.model,
+        "base_url": llm_config.base_url,
+        "provider": llm_config.provider,
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
     }
 
 
 def generate_strategy_code(prompt_text: str) -> str:
-    minimax_api_key = os.getenv("MINIMAX_API_KEY")
-    llm_api_key = os.getenv("LLM_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    api_key = minimax_api_key or llm_api_key or openai_api_key
-    if not api_key:
-        raise ValueError("未配置 MINIMAX_API_KEY、LLM_API_KEY 或 OPENAI_API_KEY")
+    llm_config = resolve_llm_provider()
+    api_key = llm_config.api_key
 
     def extract_code(data: dict) -> str:
         choices = data.get("choices") or []
         if not choices:
             raise ValueError(f"策略生成返回异常，缺少 choices: {data}")
         message = choices[0].get("message") or {}
-        content = (message.get("content") or "").strip()
+        content = message.get("content") or ""
+        if isinstance(content, list):
+            content = "\n".join(str(part.get("text") or part.get("content") or "") if isinstance(part, dict) else str(part) for part in content)
+        content = str(content).strip()
         if not content:
             raise ValueError(f"策略生成返回空内容: {data}")
         if "<think>" in content and "</think>" in content:
-            content = content.split("</think>", 1)[1].strip()
-        if content.startswith("```"):
-            content = content.strip("`").strip()
-            if content.startswith("python"):
-                content = content[6:].lstrip()
+            content = content.rsplit("</think>", 1)[1].strip()
+        fenced = re.search(r"```(?:python)?\s*(.*?)```", content, re.IGNORECASE | re.DOTALL)
+        if fenced:
+            content = fenced.group(1).strip()
+        elif "def run_strategy" in content:
+            content = content[content.index("def run_strategy"):].strip()
+        content = re.sub(r"</?code>", "", content, flags=re.IGNORECASE).strip()
         return content.strip()
 
-    def call_llm(model_name: str, base_url: str, messages: list[dict], temperature: float) -> dict:
+    def build_payload(model_name: str, messages: list[dict], temperature: float, provider: str) -> dict:
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if provider == "minimax":
+            payload.update(
+                {
+                    "max_completion_tokens": 2048,
+                    "top_p": 0.9,
+                    "reasoning_split": True,
+                }
+            )
+        elif provider == "deepseek":
+            payload.update(
+                {
+                    "max_tokens": 2048,
+                    "thinking": {"type": "disabled"},
+                }
+            )
+        return payload
+
+    def call_llm(model_name: str, base_url: str, provider: str, messages: list[dict], temperature: float) -> dict:
         payloads = [
-            {"model": model_name, "messages": messages, "temperature": temperature},
-            {
-                "model": model_name,
-                "messages": [
+            build_payload(model_name, messages, temperature, provider),
+            build_payload(
+                model_name,
+                [
                     {"role": "system", "content": "只返回 Python 代码，定义 run_strategy(context)，不要解释。"},
                     {"role": "user", "content": messages[-1]["content"]},
                 ],
-                "temperature": 0.1,
-            },
+                0.1,
+                provider,
+            ),
         ]
         last_error = None
         with httpx.Client(timeout=90) as client:
@@ -240,9 +262,35 @@ def generate_strategy_code(prompt_text: str) -> str:
                     return response.json()
                 except httpx.HTTPStatusError as exc:
                     last_error = exc
-                    if exc.response.status_code == 529 and index < len(payloads) - 1:
+                    if exc.response.status_code in {429, 529} and index < len(payloads) - 1:
                         sleep(1)
                         continue
+                    if provider == "minimax" and exc.response.status_code == 400 and payload.get("reasoning_split"):
+                        retry_payload = dict(payload)
+                        retry_payload.pop("reasoning_split", None)
+                        response = client.post(
+                            f"{base_url}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json=retry_payload,
+                        )
+                        response.raise_for_status()
+                        return response.json()
+                    if provider == "deepseek" and exc.response.status_code == 400 and payload.get("thinking"):
+                        retry_payload = dict(payload)
+                        retry_payload.pop("thinking", None)
+                        response = client.post(
+                            f"{base_url}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json=retry_payload,
+                        )
+                        response.raise_for_status()
+                        return response.json()
                     raise
         raise last_error or ValueError("策略生成失败")
 
@@ -254,6 +302,7 @@ def generate_strategy_code(prompt_text: str) -> str:
         call_llm(
             llm_context["model"],
             llm_context["base_url"],
+            llm_context["provider"],
             [
                 {"role": "system", "content": llm_context["system_prompt"]},
                 {"role": "user", "content": llm_context["user_prompt"]},
@@ -262,13 +311,19 @@ def generate_strategy_code(prompt_text: str) -> str:
         )
     )
 
-    validation = run_strategy_code(generated, test_context)
+    static_errors = validate_strategy_code(generated)
+    validation = (
+        {"error": True, "reason": "策略代码校验失败: " + "；".join(static_errors[:3])}
+        if static_errors
+        else run_strategy_code(generated, test_context)
+    )
     if validation.get("error"):
         repair_prompt = (
             "下面这段策略代码不符合项目约定，请修复后只返回完整 Python 代码。\n"
             f"错误：{validation.get('reason', '未知错误')}\n"
-            "项目约定：只能访问 context['stock']、context['snapshots']、context['indicators']；"
-            "必须定义 run_strategy(context)；返回 dict。\n"
+            "项目约定：只能访问 context['stock']、context['data']、context['snapshots']、context['indicators']；"
+            "必须定义 run_strategy(context)；返回 dict；不要写 import / from import；"
+            "math、np、pd 已经预置，可以直接使用；其他外部包一律不要用。\n"
             f"参考模板：\n{contract['template']}\n"
             f"待修复代码：\n{generated}"
         )
@@ -276,6 +331,7 @@ def generate_strategy_code(prompt_text: str) -> str:
             call_llm(
                 llm_context["model"],
                 llm_context["base_url"],
+                llm_context["provider"],
                 [
                     {"role": "system", "content": llm_context["system_prompt"]},
                     {"role": "user", "content": repair_prompt},
@@ -283,7 +339,12 @@ def generate_strategy_code(prompt_text: str) -> str:
                 0.1,
             )
         )
-        validation = run_strategy_code(generated, test_context)
+        static_errors = validate_strategy_code(generated)
+        validation = (
+            {"error": True, "reason": "策略代码校验失败: " + "；".join(static_errors[:3])}
+            if static_errors
+            else run_strategy_code(generated, test_context)
+        )
         if validation.get("error"):
             raise ValueError(validation.get("reason", "策略代码校验失败"))
     return generated

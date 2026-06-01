@@ -76,7 +76,7 @@ export STOCK_AI_DB_URL='mysql://user:password@127.0.0.1:3306/stock_ai?charset=ut
 - `STOCK_INFO_TTL`：股票信息缓存秒数
 - `KLINE_TTL`：K 线缓存秒数
 - `SEARCH_TTL`：搜索缓存秒数
-- `LLM_API_KEY` / `OPENAI_API_KEY` / `MINIMAX_API_KEY`：策略生成/AI 总结使用
+- `DEEPSEEK_API_KEY` / `MINIMAX_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`：策略生成/AI 总结使用；配置 DeepSeek 时默认使用 `https://api.deepseek.com` 和 `deepseek-v4-flash`
 
 ## 5. 功能说明
 
