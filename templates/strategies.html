@@ -308,6 +308,181 @@
             padding: var(--sp-3);
             background: var(--bg);
         }
+        .code-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-2);
+            margin-bottom: var(--sp-2);
+            flex-wrap: wrap;
+        }
+        .code-toolbar-actions {
+            display: flex;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+        }
+        .code-workbench {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+            gap: var(--sp-3);
+            align-items: stretch;
+        }
+        .code-pane,
+        .code-preview-pane {
+            min-width: 0;
+        }
+        .code-preview-pane {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border);
+            border-radius: var(--r-sm);
+            background: #0A101C;
+            overflow: hidden;
+        }
+        .code-preview-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 34px;
+            padding: 0 var(--sp-3);
+            border-bottom: 1px solid var(--border);
+            color: var(--text-2);
+            font-size: 12px;
+        }
+        .code-highlight {
+            flex: 1;
+            min-height: 260px;
+            max-height: 380px;
+            margin: 0;
+            overflow: auto;
+            padding: var(--sp-2) 0;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.55;
+            color: #DDE7F7;
+            background: transparent;
+        }
+        .code-line {
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            min-height: 18px;
+            padding-right: var(--sp-3);
+        }
+        .code-line-no {
+            user-select: none;
+            color: var(--text-3);
+            text-align: right;
+            padding-right: var(--sp-2);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .code-line-text {
+            padding-left: var(--sp-2);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        .tok-keyword { color: #8FB3FF; font-weight: 600; }
+        .tok-string { color: #9ED99E; }
+        .tok-number { color: #F7B955; }
+        .tok-comment { color: #63748F; font-style: italic; }
+        .tok-function { color: #74D7E5; }
+        .tok-builtin { color: #C7A8FF; }
+        .review-panel {
+            margin-top: var(--sp-3);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            background: var(--bg-elev);
+            overflow: hidden;
+        }
+        .review-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-2);
+            padding: var(--sp-3) var(--sp-4);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .review-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-1);
+        }
+        .review-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .review-body {
+            display: grid;
+            gap: var(--sp-3);
+            padding: var(--sp-3) var(--sp-4) var(--sp-4);
+        }
+        .review-section {
+            min-width: 0;
+        }
+        .review-section-title {
+            margin-bottom: 6px;
+            color: var(--text-2);
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .review-explain,
+        .review-finding,
+        .review-case {
+            border: 1px solid var(--border);
+            border-radius: var(--r-sm);
+            background: var(--card);
+            padding: var(--sp-2) var(--sp-3);
+            font-size: 12px;
+            color: var(--text-2);
+            line-height: 1.6;
+        }
+        .review-explain + .review-explain,
+        .review-finding + .review-finding,
+        .review-case + .review-case {
+            margin-top: var(--sp-2);
+        }
+        .review-finding {
+            display: grid;
+            grid-template-columns: 74px minmax(0, 1fr);
+            gap: var(--sp-2);
+        }
+        .review-case {
+            display: grid;
+            grid-template-columns: 88px minmax(0, 1fr);
+            gap: var(--sp-2);
+        }
+        .review-case-name,
+        .review-finding-level {
+            font-weight: 700;
+        }
+        .review-finding-level.ok,
+        .review-case-name.passed { color: var(--ok); }
+        .review-finding-level.warn { color: var(--warn); }
+        .review-finding-level.error,
+        .review-case-name.failed,
+        .review-case-name.blocked { color: var(--danger); }
+        .review-finding-level.info { color: var(--primary); }
+        .review-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .review-tag {
+            max-width: 100%;
+            padding: 2px 7px;
+            border-radius: var(--r-pill);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-2);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+        .review-stale {
+            color: var(--warn);
+            font-size: 12px;
+        }
 
         /* Contract 参考 */
         .contract-inputs {
@@ -411,6 +586,13 @@
             }
             .code-editor {
                 min-height: 220px;
+            }
+            .code-workbench {
+                grid-template-columns: 1fr;
+            }
+            .review-finding,
+            .review-case {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -644,7 +826,7 @@
                        x-transition:leave="drawer-leave"
                        x-transition:leave-start="drawer-leave-start"
                        x-transition:leave-end="drawer-leave-end"
-                       style="width: min(100%, 640px);">
+                       style="width: min(100%, 960px);">
                     <header class="drawer-header">
                         <div class="title-lg" x-text="editorTitle()"></div>
                         <button class="btn btn-ghost btn-icon" @click="maybeCloseEditor()" aria-label="关闭">✕</button>
@@ -739,14 +921,104 @@
                                     </div>
 
                                     <div class="form-field">
-                                        <label class="form-label form-label-required"
-                                               x-text="editor.form.mode === 'ai' ? '生成的代码（可继续修改）' : '策略代码'"></label>
-                                        <textarea class="input code-editor"
-                                                  x-model="editor.form.code"
-                                                  spellcheck="false"
-                                                  placeholder="def run_strategy(context):&#10;    return {'pass': True, 'reason': '...'}"></textarea>
+                                        <div class="code-toolbar">
+                                            <label class="form-label form-label-required"
+                                                   x-text="editor.form.mode === 'ai' ? '生成的代码（可继续修改）' : '策略代码'"></label>
+                                            <div class="code-toolbar-actions">
+                                                <button type="button" class="btn btn-ghost btn-sm"
+                                                        @click="reviewCurrentCode()"
+                                                        :disabled="codeReviewRunning() || !editor.form.code.trim()">
+                                                    <template x-if="codeReviewRunning()"><span class="spinner"></span></template>
+                                                    <span x-text="codeReviewRunning() ? 'CR 中…' : 'CR + 样例测试'"></span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="code-workbench">
+                                            <div class="code-pane">
+                                                <textarea class="input code-editor"
+                                                          x-model="editor.form.code"
+                                                          @input="markReviewStale()"
+                                                          spellcheck="false"
+                                                          placeholder="def run_strategy(context):&#10;    return {'pass': True, 'reason': '...'}"></textarea>
+                                            </div>
+                                            <div class="code-preview-pane">
+                                                <div class="code-preview-head">
+                                                    <span>高亮预览</span>
+                                                    <span class="review-stale" x-show="reviewIsStale()">代码已修改，需重新 CR</span>
+                                                </div>
+                                                <pre class="code-highlight" x-html="highlightCode(editor.form.code)"></pre>
+                                            </div>
+                                        </div>
                                         <div class="form-hint">
-                                            必须定义 <code>run_strategy(context)</code>，返回 <code>{pass, reason, score?, metrics?}</code>。保存前会用空上下文试跑一次。
+                                            必须定义 <code>run_strategy(context)</code>，返回 <code>{pass, reason, score?, metrics?}</code>。保存前会跑静态 CR 和三组本地样例。
+                                        </div>
+                                    </div>
+
+                                    <div class="review-panel" x-show="editor && editor.review && (editor.review.running || editor.review.error || editor.review.data)" x-transition>
+                                        <div class="review-head">
+                                            <div class="review-title">代码 CR、解读与本地样例测试</div>
+                                            <div class="review-meta">
+                                                <span class="badge" :class="reviewBadgeClass()" x-text="reviewBadgeText()"></span>
+                                                <span class="badge badge-dim" x-show="editor.review && editor.review.data"
+                                                      x-text="reviewCaseText()"></span>
+                                                <span class="review-stale" x-show="reviewIsStale()">结果已过期</span>
+                                            </div>
+                                        </div>
+                                        <div class="review-body">
+                                            <template x-if="editor.review && editor.review.running">
+                                                <div class="ai-status">
+                                                    <span class="spinner"></span>
+                                                    <span>正在做代码审查并执行本地样例…</span>
+                                                </div>
+                                            </template>
+                                            <template x-if="editor.review && editor.review.error">
+                                                <div class="banner banner-danger">
+                                                    <span class="banner-icon">!</span>
+                                                    <div class="banner-body" x-text="editor.review.error"></div>
+                                                </div>
+                                            </template>
+                                            <template x-if="editor.review && editor.review.data">
+                                                <div>
+                                                    <div class="review-section">
+                                                        <div class="review-section-title">代码解读</div>
+                                                        <template x-for="line in reviewExplanation()" :key="line">
+                                                            <div class="review-explain" x-text="line"></div>
+                                                        </template>
+                                                        <div class="review-tags" style="margin-top: var(--sp-2);">
+                                                            <template x-for="path in reviewContextPaths()" :key="path">
+                                                                <span class="review-tag" x-text="path"></span>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                    <div class="review-section" style="margin-top: var(--sp-3);">
+                                                        <div class="review-section-title">CR 发现</div>
+                                                        <template x-for="finding in reviewFindings()" :key="`${finding.severity}-${finding.title}-${finding.detail}`">
+                                                            <div class="review-finding">
+                                                                <div class="review-finding-level" :class="finding.severity"
+                                                                     x-text="findingSeverityText(finding)"></div>
+                                                                <div>
+                                                                    <div style="color: var(--text-1); font-weight: 600;" x-text="finding.title"></div>
+                                                                    <div x-text="finding.detail"></div>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                    <div class="review-section" style="margin-top: var(--sp-3);">
+                                                        <div class="review-section-title">本地样例试跑</div>
+                                                        <template x-for="test in reviewTests()" :key="test.name">
+                                                            <div class="review-case">
+                                                                <div class="review-case-name" :class="test.status"
+                                                                     x-text="testStatusText(test)"></div>
+                                                                <div>
+                                                                    <div style="color: var(--text-1); font-weight: 600;" x-text="test.name"></div>
+                                                                    <div x-text="test.description"></div>
+                                                                    <div style="margin-top: 4px;" x-text="`返回：${test.passed ? '命中' : '未命中'} · ${test.reason || '-'}`"></div>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
                                         </div>
                                     </div>
 
@@ -868,7 +1140,7 @@
 
                         <footer class="drawer-form-footer">
                             <button type="button" class="btn btn-ghost" @click="maybeCloseEditor()">取消</button>
-                            <button type="submit" class="btn btn-primary" :disabled="editor.saving || llm.running">
+                            <button type="submit" class="btn btn-primary" :disabled="editor.saving || llm.running || codeReviewRunning()">
                                 <template x-if="editor.saving"><span class="spinner spinner-on-primary"></span></template>
                                 <span x-text="editor.saving ? '保存中…' : (editor.kind === 'group' ? '保存策略组' : '保存策略')"></span>
                             </button>
@@ -1023,6 +1295,15 @@
                     }
                 },
 
+                emptyReviewState() {
+                    return {
+                        running: false,
+                        error: null,
+                        data: null,
+                        lastReviewedCode: '',
+                    };
+                },
+
                 // ========== 视图与编辑器入口 ==========
                 openCreate() {
                     if (this.view === 'groups') {
@@ -1051,6 +1332,7 @@
                         saving: false,
                         saved: null,
                         lastGeneratedAt: 0,
+                        review: this.emptyReviewState(),
                     };
                     this.ensureContract();
                 },
@@ -1074,6 +1356,7 @@
                         saving: false,
                         saved: null,
                         lastGeneratedAt: 0,
+                        review: this.emptyReviewState(),
                     };
                     this.ensureContract();
                 },
@@ -1178,6 +1461,15 @@
                         return;
                     }
                     this.editor.error = null;
+                    const review = await this.ensureCodeReviewed();
+                    if (!review) {
+                        this.editor.error = '代码审查失败，请先查看 CR 结果';
+                        return;
+                    }
+                    if (!review.ok) {
+                        this.editor.error = '代码审查或样例试跑未通过，请先修复后再保存';
+                        return;
+                    }
                     this.editor.saving = true;
                     try {
                         const payload = {
@@ -1199,6 +1491,10 @@
                         const data = await res.json();
                         if (!res.ok || !data.ok) {
                             this.editor.error = data.error || '保存失败';
+                            if (data.review && this.editor.review) {
+                                this.editor.review.data = data.review;
+                                this.editor.review.lastReviewedCode = f.code;
+                            }
                             return;
                         }
                         this.toast(this.editor.mode === 'edit' ? '策略已更新' : '策略已创建', 'success');
@@ -1336,7 +1632,12 @@
                         if (data.code) {
                             this.editor.form.code = data.code;
                             this.editor.lastGeneratedAt = Date.now();
-                            this.toast('代码已生成，可在下方微调后保存', 'success');
+                            const review = await this.reviewCurrentCode({ silent: true });
+                            if (review && review.ok) {
+                                this.toast('代码已生成，并已通过 CR 与样例测试', 'success');
+                            } else {
+                                this.toast('代码已生成，请查看下方 CR 结果', 'error');
+                            }
                         }
                     } catch (e) {
                         if (e.name === 'AbortError') {
@@ -1361,6 +1662,127 @@
                     this.llm.controller = null;
                     this.llm.running = false;
                     this.llm.elapsed = 0;
+                },
+
+                // ========== 代码 CR 与样例测试 ==========
+                codeReviewRunning() {
+                    return !!(this.editor && this.editor.review && this.editor.review.running);
+                },
+
+                markReviewStale() {
+                    if (!this.editor || !this.editor.review) return;
+                    if (this.editor.review.data && this.editor.review.lastReviewedCode !== this.editor.form.code) {
+                        this.editor.review.error = null;
+                    }
+                },
+
+                reviewIsStale() {
+                    if (!this.editor || !this.editor.review || !this.editor.review.data) return false;
+                    return this.editor.review.lastReviewedCode !== this.editor.form.code;
+                },
+
+                async reviewCurrentCode(options = {}) {
+                    if (!this.editor || this.editor.kind !== 'strategy') return null;
+                    if (!this.editor.review) this.editor.review = this.emptyReviewState();
+                    const code = (this.editor.form.code || '').trim();
+                    if (!code) {
+                        this.editor.review.error = '策略代码不能为空';
+                        return null;
+                    }
+                    this.editor.review.running = true;
+                    this.editor.review.error = null;
+                    try {
+                        const res = await fetch('/api/strategies/review-code', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ code }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.ok) {
+                            this.editor.review.error = data.error || '代码审查失败';
+                            return null;
+                        }
+                        this.editor.review.data = data.review;
+                        this.editor.review.lastReviewedCode = this.editor.form.code;
+                        if (!options.silent) {
+                            this.toast(data.review && data.review.ok ? 'CR 与样例测试通过' : 'CR 未通过，请查看详情', data.review && data.review.ok ? 'success' : 'error');
+                        }
+                        return data.review;
+                    } catch (e) {
+                        this.editor.review.error = '代码审查失败：' + (e.message || '未知');
+                        if (!options.silent) this.toast('代码审查失败', 'error');
+                        return null;
+                    } finally {
+                        if (this.editor && this.editor.review) this.editor.review.running = false;
+                    }
+                },
+
+                async ensureCodeReviewed() {
+                    if (!this.editor || this.editor.kind !== 'strategy') return null;
+                    const review = this.editor.review;
+                    if (review && review.data && review.lastReviewedCode === this.editor.form.code) {
+                        return review.data;
+                    }
+                    return await this.reviewCurrentCode({ silent: true });
+                },
+
+                reviewSummary() {
+                    return (this.editor && this.editor.review && this.editor.review.data && this.editor.review.data.summary) || {};
+                },
+
+                reviewBadgeClass() {
+                    if (this.codeReviewRunning()) return 'badge-dim';
+                    const summary = this.reviewSummary();
+                    if (!this.editor || !this.editor.review || !this.editor.review.data) return 'badge-dim';
+                    if (summary.severity === 'ok') return 'badge-ok';
+                    if (summary.severity === 'warn') return 'badge-accent';
+                    return 'badge-danger';
+                },
+
+                reviewBadgeText() {
+                    if (this.codeReviewRunning()) return '审查中';
+                    if (!this.editor || !this.editor.review || !this.editor.review.data) return '未审查';
+                    const summary = this.reviewSummary();
+                    if (summary.severity === 'ok') return '通过';
+                    if (summary.severity === 'warn') return '有建议';
+                    return '未通过';
+                },
+
+                reviewCaseText() {
+                    const summary = this.reviewSummary();
+                    if (!summary.case_total) return '未试跑';
+                    return `样例 ${summary.case_passed}/${summary.case_total}`;
+                },
+
+                reviewExplanation() {
+                    const data = this.editor && this.editor.review && this.editor.review.data;
+                    return (data && data.analysis && data.analysis.explanation) || [];
+                },
+
+                reviewContextPaths() {
+                    const data = this.editor && this.editor.review && this.editor.review.data;
+                    return (data && data.analysis && data.analysis.context_paths || []).slice(0, 12);
+                },
+
+                reviewFindings() {
+                    const data = this.editor && this.editor.review && this.editor.review.data;
+                    return (data && data.findings) || [];
+                },
+
+                reviewTests() {
+                    const data = this.editor && this.editor.review && this.editor.review.data;
+                    return (data && data.tests) || [];
+                },
+
+                findingSeverityText(finding) {
+                    const map = { ok: '通过', warn: '建议', error: '错误', info: '提示' };
+                    const prefix = map[finding.severity] || finding.severity;
+                    return finding.line ? `${prefix} L${finding.line}` : prefix;
+                },
+
+                testStatusText(test) {
+                    const map = { passed: '通过', failed: '失败', blocked: '未执行' };
+                    return map[test.status] || test.status;
                 },
 
                 async copyContext() {
@@ -1425,6 +1847,41 @@
                     if (!code) return '';
                     const lines = code.split('\n').slice(0, 5);
                     return lines.join('\n');
+                },
+
+                escapeHtml(text) {
+                    return String(text || '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                },
+
+                highlightInline(line) {
+                    let html = this.escapeHtml(line);
+                    const stash = [];
+                    const put = (className, value) => {
+                        const key = `__TOK_${stash.length}__`;
+                        stash.push(`<span class="${className}">${value}</span>`);
+                        return key;
+                    };
+                    html = html.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, match => put('tok-string', match));
+                    html = html.replace(/#.*$/g, match => put('tok-comment', match));
+                    html = html.replace(/\b(def)\s+([A-Za-z_][A-Za-z0-9_]*)/g, '<span class="tok-keyword">$1</span> <span class="tok-function">$2</span>');
+                    html = html.replace(/\b(return|if|else|elif|for|while|in|and|or|not|True|False|None|try|except|break|continue)\b/g, '<span class="tok-keyword">$1</span>');
+                    html = html.replace(/\b(abs|all|any|bool|dict|enumerate|float|int|len|list|max|min|range|round|sorted|str|sum|zip|math|np|pd)\b/g, '<span class="tok-builtin">$1</span>');
+                    html = html.replace(/\b\d+(?:\.\d+)?\b/g, '<span class="tok-number">$&</span>');
+                    stash.forEach((value, index) => {
+                        html = html.replace(`__TOK_${index}__`, value);
+                    });
+                    return html;
+                },
+
+                highlightCode(code) {
+                    const lines = String(code || '').split('\n');
+                    return lines.map((line, index) => {
+                        const content = this.highlightInline(line) || '&nbsp;';
+                        return `<span class="code-line"><span class="code-line-no">${index + 1}</span><span class="code-line-text">${content}</span></span>`;
+                    }).join('');
                 },
 
                 toast(text, kind = 'success') {

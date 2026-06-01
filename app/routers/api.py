@@ -9,7 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from db import compat as db
-from app.core.strategy_engine import build_strategy_context, get_strategy_contract, run_strategy_code
+from app.core.strategy_engine import get_strategy_contract
+from app.core.strategy_reviewer import review_strategy_code
 from app.repositories.screening_repository import ScreeningRepository
 from app.runtime import task_manager
 from app.services.market_service import (
@@ -147,10 +148,9 @@ async def create_strategy_api(request: Request):
     if not name or not code:
         return JSONResponse({"ok": False, "error": "策略名称和代码不能为空"}, status_code=400)
     try:
-        test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
-        validation = run_strategy_code(code, test_context)
-        if validation.get("error"):
-            return JSONResponse({"ok": False, "error": validation.get("reason", "策略代码校验失败")}, status_code=400)
+        review = review_strategy_code(code)
+        if not review.get("ok"):
+            return JSONResponse({"ok": False, "error": "策略代码审查或样例试跑未通过", "review": review}, status_code=400)
         return {"ok": True, "strategy": strategy_repository.create_strategy(name, description, code, create_mode, enabled)}
     except db.IntegrityError:
         return JSONResponse({"ok": False, "error": "策略名称已存在"}, status_code=400)
@@ -170,10 +170,9 @@ async def update_strategy_api(strategy_id: int, request: Request):
     if not name or not code:
         return JSONResponse({"ok": False, "error": "策略名称和代码不能为空"}, status_code=400)
     try:
-        test_context = build_strategy_context({"code": "000001", "name": "平安银行", "symbol": "sz000001"}, [], [])
-        validation = run_strategy_code(code, test_context)
-        if validation.get("error"):
-            return JSONResponse({"ok": False, "error": validation.get("reason", "策略代码校验失败")}, status_code=400)
+        review = review_strategy_code(code)
+        if not review.get("ok"):
+            return JSONResponse({"ok": False, "error": "策略代码审查或样例试跑未通过", "review": review}, status_code=400)
         ok = strategy_repository.update_strategy(strategy_id, name, description, code, enabled=enabled)
         if not ok:
             return JSONResponse({"ok": False, "error": "策略不存在"}, status_code=404)
@@ -251,6 +250,13 @@ async def generate_strategy_api(request: Request):
         return {"ok": True, "code": generate_strategy_code(prompt_text)}
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@router.post("/strategies/review-code")
+async def review_strategy_api(request: Request):
+    payload = await request.json()
+    code = (payload.get("code") or "").strip()
+    return {"ok": True, "review": review_strategy_code(code)}
 
 
 @router.post("/strategies/generate-context")
