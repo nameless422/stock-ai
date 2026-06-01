@@ -149,15 +149,6 @@ build_archive() {
     "$PROJECT_NAME"
 }
 
-append_assignment() {
-  local name="$1"
-  local value="${!name:-}"
-
-  if [ -n "$value" ]; then
-    printf "%s=%q " "$name" "$value"
-  fi
-}
-
 main() {
   load_env_file
 
@@ -178,8 +169,12 @@ main() {
   prompt_password_if_needed
 
   local archive_path
+  local deploy_env_path
+  local remote_env_path
   archive_path="$(mktemp "/tmp/${PROJECT_NAME}.deploy.XXXXXX").tar.gz"
-  trap 'rm -f "${archive_path:-}"' EXIT
+  deploy_env_path="$(mktemp "/tmp/${PROJECT_NAME}.deploy.env.XXXXXX")"
+  remote_env_path="/tmp/${PROJECT_NAME}.deploy.env"
+  trap 'rm -f "${archive_path:-}" "${deploy_env_path:-}"' EXIT
 
   log "Packing project"
   build_archive "$archive_path"
@@ -187,7 +182,6 @@ main() {
   log "Uploading project archive"
   run_scp "$archive_path" "/tmp/${PROJECT_NAME}.deploy.tar.gz"
 
-  local sudo_env=""
   local env_names=(
     APP_NAME
     APP_USER
@@ -222,25 +216,42 @@ main() {
     SEARCH_TTL
   )
   local env_name
+  : >"$deploy_env_path"
   for env_name in "${env_names[@]}"; do
-    sudo_env+=$(append_assignment "$env_name")
+    if [ -n "${!env_name:-}" ]; then
+      printf "%s=%q\n" "$env_name" "${!env_name}" >>"$deploy_env_path"
+    fi
   done
-  sudo_env+="APP_DIR=$(printf '%q' "$REMOTE_APP_DIR") "
+  printf "APP_DIR=%q\n" "$REMOTE_APP_DIR" >>"$deploy_env_path"
+  chmod 600 "$deploy_env_path"
+
+  log "Uploading deploy environment"
+  run_scp "$deploy_env_path" "$remote_env_path"
+
+  local preserve_env_names
+  preserve_env_names="$(IFS=,; echo "${env_names[*]},APP_DIR")"
 
   local remote_cmd
 remote_cmd=$(cat <<EOF
 set -euo pipefail
-APP_DIR=$(printf '%q' "$REMOTE_APP_DIR")
+DEPLOY_ENV_PATH=$(printf '%q' "$remote_env_path")
 ARCHIVE_PATH=/tmp/${PROJECT_NAME}.deploy.tar.gz
 TMP_DIR=\$(mktemp -d /tmp/${PROJECT_NAME}.XXXXXX)
-REMOTE_INSTALL_MYSQL=$(printf '%q' "$INSTALL_MYSQL")
 cleanup() {
   rm -rf "\$TMP_DIR"
+  rm -f "\$DEPLOY_ENV_PATH"
 }
 trap cleanup EXIT
 
+set -a
+. "\$DEPLOY_ENV_PATH"
+set +a
+
+APP_DIR="\${APP_DIR:-$(printf '%q' "$REMOTE_APP_DIR")}"
+REMOTE_INSTALL_MYSQL="\${INSTALL_MYSQL:-1}"
+
 if command -v mysql >/dev/null 2>&1; then
-  if mysql --protocol=TCP -h $(printf '%q' "${MYSQL_HOST:-127.0.0.1}") -P $(printf '%q' "${MYSQL_PORT:-3306}") -u$(printf '%q' "${MYSQL_APP_USER:-stock_ai}") -p$(printf '%q' "${MYSQL_APP_PASSWORD:-}") -e $(printf '%q' "USE \`${MYSQL_DATABASE:-stock_ai}\`;") >/dev/null 2>&1; then
+  if mysql --protocol=TCP -h "\${MYSQL_HOST:-127.0.0.1}" -P "\${MYSQL_PORT:-3306}" -u"\${MYSQL_APP_USER:-stock_ai}" -p"\${MYSQL_APP_PASSWORD:-}" -e "USE \\\`\${MYSQL_DATABASE:-stock_ai}\\\`;" >/dev/null 2>&1; then
     REMOTE_INSTALL_MYSQL=0
   fi
 fi
@@ -249,8 +260,9 @@ mkdir -p "\$APP_DIR"
 tar -xzf "\$ARCHIVE_PATH" -C "\$TMP_DIR"
 rsync -a --delete --exclude '.git/' --exclude '.venv/' --exclude '.mypy_cache/' --exclude '__pycache__/' --exclude '._*' "\$TMP_DIR/${PROJECT_NAME}/" "\$APP_DIR/"
 chmod +x "\$APP_DIR/deploy/setup_server.sh" "\$APP_DIR/run.sh"
-sudo ${sudo_env}INSTALL_MYSQL="\$REMOTE_INSTALL_MYSQL" /bin/bash "\$APP_DIR/deploy/setup_server.sh"
-sudo systemctl is-active "${APP_NAME}" >/dev/null
+export INSTALL_MYSQL="\$REMOTE_INSTALL_MYSQL"
+sudo --preserve-env=${preserve_env_names} /bin/bash "\$APP_DIR/deploy/setup_server.sh"
+sudo systemctl is-active "\${APP_NAME:-stock-ai}" >/dev/null
 for _ in \$(seq 1 15); do
   if curl -fsS --max-time 5 http://127.0.0.1:8000/ >/dev/null 2>/dev/null; then
     break
