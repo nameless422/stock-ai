@@ -607,7 +607,7 @@
             </div>
             <div class="hero-desc">
                 用自然语言描述你的选股思路，AI 自动生成 <code>run_strategy(context)</code> 代码；保存后即可到
-                <a href="/screener">选股页</a> 对全量 A 股执行。也可以把多条策略组合成 AND / OR 策略组一起跑。
+                <a href="/screener">选股页</a> 对全量 A 股执行。也可以从 <a href="/assistant">股票助手</a> 直接对话创建并运行。
             </div>
         </header>
 
@@ -677,10 +677,13 @@
                     <span class="tab-count" x-text="groups ? groups.length : 0"></span>
                 </button>
             </div>
-            <button class="btn btn-primary" @click="openCreate()">
-                <span style="font-size: 14px; line-height: 1;">+</span>
-                <span x-text="view === 'groups' ? '新建策略组' : '新建策略'"></span>
-            </button>
+            <div class="row-flex">
+                <a class="btn btn-ghost" href="/assistant">股票助手</a>
+                <button class="btn btn-primary" @click="openCreate()">
+                    <span style="font-size: 14px; line-height: 1;">+</span>
+                    <span x-text="view === 'groups' ? '新建策略组' : '新建策略'"></span>
+                </button>
+            </div>
         </div>
 
         <!-- 策略列表 -->
@@ -807,10 +810,11 @@
 
         <!-- 底部导航 -->
         <footer class="nav-links" style="margin-top: var(--sp-5); justify-content: center;">
-            <a href="/">股票分析</a>
+            <a href="/stock">股票分析</a>
             <span>·</span>
             <a href="/screener">策略选股</a>
             <span>·</span>
+            <a href="/assistant">股票助手</a>
         </footer>
 
         <!-- ======================================================== -->
@@ -1266,8 +1270,8 @@
                 },
                 lastStockUrl() {
                     const stock = this.workspace.stock;
-                    if (!stock || !stock.code) return '/';
-                    return `/?code=${encodeURIComponent(stock.code)}`;
+                    if (!stock || !stock.code) return '/stock';
+                    return `/stock?code=${encodeURIComponent(stock.code)}`;
                 },
 
                 async loadAll() {

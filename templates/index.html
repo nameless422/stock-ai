@@ -418,7 +418,7 @@
             </div>
             <div class="hero-desc">
                 输入股票代码或名称，查看 K 线、技术指标和 AI 分析结果。页面结构和交互已经向
-                <a href="/screener">策略选股</a> / <a href="/strategies">策略管理</a> 统一。
+                <a href="/screener">策略选股</a> / <a href="/strategies">策略管理</a> / <a href="/assistant">股票助手</a> 统一。
             </div>
         </header>
 
@@ -447,7 +447,7 @@
                 <div class="workflow-desc">在这里看 K 线、指标和 AI 分析，需要时继续回到筛选或策略页。</div>
                 <div class="workflow-meta" id="workflowCurrentStock">当前股票：加载中</div>
                 <div class="workflow-actions">
-                    <a class="btn btn-primary btn-sm" href="/" id="workflowCurrentStockLink">查看当前股票</a>
+                    <a class="btn btn-primary btn-sm" href="/stock" id="workflowCurrentStockLink">查看当前股票</a>
                 </div>
             </div>
         </section>
@@ -468,6 +468,7 @@
                 </div>
                 <button class="btn btn-primary" onclick="searchStock()">查询股票</button>
                 <a class="btn btn-ghost" href="/screener">策略选股</a>
+                <a class="btn btn-ghost" href="/assistant">股票助手</a>
                 <a class="btn btn-ghost" href="/strategies">策略管理</a>
             </div>
             <div class="quick-picks">
@@ -609,11 +610,13 @@
         </div>
 
         <footer class="nav-links footer">
-            <a href="/">股票分析</a>
+            <a href="/stock">股票分析</a>
             <span>·</span>
             <a href="/screener">策略选股</a>
             <span>·</span>
             <a href="/strategies">策略管理</a>
+            <span>·</span>
+            <a href="/assistant">股票助手</a>
         </footer>
     </div>
 
@@ -1295,10 +1298,10 @@
             const currentStockLink = document.getElementById('workflowCurrentStockLink');
             if (stock && stock.code) {
                 currentStockEl.textContent = `当前股票：${stock.name || stock.code} · ${stock.code}`;
-                currentStockLink.href = `/?code=${encodeURIComponent(stock.code)}`;
+                currentStockLink.href = `/stock?code=${encodeURIComponent(stock.code)}`;
             } else {
                 currentStockEl.textContent = '当前股票：暂无记录';
-                currentStockLink.href = '/';
+                currentStockLink.href = '/stock';
             }
 
             const screenerMetaEl = document.getElementById('workflowScreenerMeta');

@@ -19,6 +19,21 @@ MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-}"
 INSTALL_MYSQL="${INSTALL_MYSQL:-1}"
 INSTALL_NGINX="${INSTALL_NGINX:-1}"
 NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-_}"
+SERVER_PUBLIC_IP="${SERVER_PUBLIC_IP:-}"
+ENABLE_SELF_SIGNED_HTTPS="${ENABLE_SELF_SIGNED_HTTPS:-0}"
+TLS_DIR="${TLS_DIR:-${ENV_DIR}/tls}"
+TLS_CERT_FILE="${TLS_CERT_FILE:-${TLS_DIR}/${APP_NAME}.crt}"
+TLS_KEY_FILE="${TLS_KEY_FILE:-${TLS_DIR}/${APP_NAME}.key}"
+ASSISTANT_ASR_BACKEND="${ASSISTANT_ASR_BACKEND:-}"
+ASSISTANT_ASR_LANGUAGE="${ASSISTANT_ASR_LANGUAGE:-zh}"
+ASSISTANT_ASR_THREADS="${ASSISTANT_ASR_THREADS:-2}"
+ASSISTANT_ASR_TIMEOUT="${ASSISTANT_ASR_TIMEOUT:-90}"
+ASSISTANT_ASR_MAX_BYTES="${ASSISTANT_ASR_MAX_BYTES:-10485760}"
+WHISPER_CPP_DIR="${WHISPER_CPP_DIR:-/opt/whisper.cpp}"
+WHISPER_CPP_MODEL_NAME="${WHISPER_CPP_MODEL_NAME:-base}"
+WHISPER_CPP_BIN="${WHISPER_CPP_BIN:-${WHISPER_CPP_DIR}/build/bin/whisper-cli}"
+WHISPER_CPP_MODEL="${WHISPER_CPP_MODEL:-${WHISPER_CPP_DIR}/models/ggml-${WHISPER_CPP_MODEL_NAME}.bin}"
+FFMPEG_BIN="${FFMPEG_BIN:-ffmpeg}"
 
 SUDO=""
 
@@ -153,6 +168,75 @@ install_dependencies() {
   "$VENV_DIR/bin/pip" install -r "$APP_DIR/requirements.txt"
 }
 
+install_whisper_cpp_packages() {
+  local pkg_manager
+  pkg_manager="$(detect_package_manager)"
+
+  if [ "$pkg_manager" = "apt" ]; then
+    run_as_root apt-get install -y git build-essential cmake ffmpeg
+    return
+  fi
+
+  run_as_root yum install -y git gcc gcc-c++ make cmake ffmpeg
+}
+
+install_whisper_cpp() {
+  if [ "$ASSISTANT_ASR_BACKEND" != "whispercpp" ]; then
+    return
+  fi
+
+  install_whisper_cpp_packages
+
+  if [ -x "$WHISPER_CPP_BIN" ] && [ -f "$WHISPER_CPP_MODEL" ]; then
+    run_as_root chmod -R a+rX "$WHISPER_CPP_DIR"
+    return
+  fi
+
+  if [ -d "$WHISPER_CPP_DIR/.git" ]; then
+    run_as_root timeout 180 git -C "$WHISPER_CPP_DIR" pull --ff-only
+  elif [ -f "$WHISPER_CPP_DIR/CMakeLists.txt" ]; then
+    :
+  else
+    run_as_root rm -rf "$WHISPER_CPP_DIR"
+    run_as_root timeout 180 git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$WHISPER_CPP_DIR"
+  fi
+
+  run_as_root cmake -S "$WHISPER_CPP_DIR" -B "$WHISPER_CPP_DIR/build" -DWHISPER_BUILD_TESTS=OFF
+  run_as_root cmake --build "$WHISPER_CPP_DIR/build" -j "$(nproc)"
+
+  if [ ! -f "$WHISPER_CPP_MODEL" ]; then
+    run_as_root "$WHISPER_CPP_DIR/models/download-ggml-model.sh" "$WHISPER_CPP_MODEL_NAME"
+  fi
+
+  run_as_root chmod -R a+rX "$WHISPER_CPP_DIR"
+}
+
+ensure_self_signed_tls() {
+  if [ "$ENABLE_SELF_SIGNED_HTTPS" != "1" ]; then
+    return
+  fi
+  if [ -f "$TLS_CERT_FILE" ] && [ -f "$TLS_KEY_FILE" ]; then
+    return
+  fi
+
+  run_as_root mkdir -p "$TLS_DIR"
+  local subject_name="${NGINX_SERVER_NAME}"
+  local san_value="DNS:${NGINX_SERVER_NAME}"
+  if [ -z "$subject_name" ] || [ "$subject_name" = "_" ]; then
+    subject_name="${SERVER_PUBLIC_IP:-localhost}"
+  fi
+  if [[ "$subject_name" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+    san_value="IP:${subject_name}"
+  fi
+  run_as_root openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+    -subj "/CN=${subject_name}" \
+    -addext "subjectAltName=${san_value}" \
+    -keyout "$TLS_KEY_FILE" \
+    -out "$TLS_CERT_FILE"
+  run_as_root chmod 600 "$TLS_KEY_FILE"
+  run_as_root chmod 644 "$TLS_CERT_FILE"
+}
+
 write_env_file() {
   run_as_root mkdir -p "$ENV_DIR"
   run_as_root tee "$ENV_FILE" >/dev/null <<EOF
@@ -165,9 +249,6 @@ EOF
     DEEPSEEK_API_BASE \
     DEEPSEEK_BASE_URL \
     DEEPSEEK_MODEL \
-    MINIMAX_API_KEY \
-    MINIMAX_API_BASE \
-    MINIMAX_MODEL \
     LLM_API_KEY \
     LLM_API_BASE \
     LLM_MODEL \
@@ -175,14 +256,25 @@ EOF
     OPENAI_BASE_URL \
     OPENAI_API_BASE \
     OPENAI_MODEL \
+    ASSISTANT_CHAT_MODELS \
     SCREENING_MAX_WORKERS \
     SCREENING_SUBMIT_BATCH \
     SCREENING_SAVE_INTERVAL \
     WEB_CONCURRENCY \
     NGINX_SERVER_NAME \
+    SERVER_PUBLIC_IP \
     STOCK_INFO_TTL \
     KLINE_TTL \
-    SEARCH_TTL; do
+    SEARCH_TTL \
+    ASSISTANT_ASR_BACKEND \
+    ASSISTANT_ASR_LANGUAGE \
+    ASSISTANT_ASR_THREADS \
+    ASSISTANT_ASR_TIMEOUT \
+    ASSISTANT_ASR_MAX_BYTES \
+    ENABLE_SELF_SIGNED_HTTPS \
+    WHISPER_CPP_BIN \
+    WHISPER_CPP_MODEL \
+    FFMPEG_BIN; do
     optional_value="${!optional_var:-}"
     if [ -n "$optional_value" ]; then
       printf '%s=%s\n' "$optional_var" "$optional_value" | run_as_root tee -a "$ENV_FILE" >/dev/null
@@ -236,9 +328,24 @@ EOF
 write_nginx_config() {
   local pkg_manager
   local nginx_conf
+  local ssl_listen=""
+  local ssl_config=""
   pkg_manager="$(detect_package_manager)"
 
   run_as_root mkdir -p "/var/cache/nginx/${APP_NAME}"
+  ensure_self_signed_tls
+
+  if [ "$ENABLE_SELF_SIGNED_HTTPS" = "1" ]; then
+    ssl_listen="    listen 443 ssl;"
+    ssl_config=$(cat <<EOF
+    ssl_certificate ${TLS_CERT_FILE};
+    ssl_certificate_key ${TLS_KEY_FILE};
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:${APP_NAME}_ssl:10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+EOF
+)
+  fi
 
   if [ "$pkg_manager" = "apt" ]; then
     nginx_conf="/etc/nginx/sites-available/${APP_NAME}.conf"
@@ -252,7 +359,9 @@ limit_req_zone \$binary_remote_addr zone=${APP_NAME}_rate:10m rate=20r/s;
 
 server {
     listen 80 default_server;
+${ssl_listen}
     server_name ${NGINX_SERVER_NAME};
+${ssl_config}
 
     server_tokens off;
     client_max_body_size 10m;
@@ -283,13 +392,7 @@ server {
     }
 
     location = / {
-        proxy_cache ${APP_NAME}_cache;
-        proxy_cache_valid 200 10s;
-        proxy_cache_methods GET HEAD;
-        proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504;
-        proxy_cache_background_update on;
-        proxy_cache_lock on;
-        add_header X-Proxy-Cache \$upstream_cache_status always;
+        add_header X-Proxy-Cache BYPASS always;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -339,6 +442,20 @@ server {
         proxy_pass http://127.0.0.1:8000;
     }
 
+    location = /api/assistant/transcribe {
+        client_max_body_size 12m;
+        add_header X-Proxy-Cache BYPASS always;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_pass http://127.0.0.1:8000;
+    }
+
     location / {
         add_header X-Proxy-Cache BYPASS always;
         proxy_set_header Host \$host;
@@ -374,6 +491,9 @@ start_nginx() {
   run_as_root nginx -t
   if command -v ufw >/dev/null 2>&1; then
     run_as_root ufw allow 80/tcp >/dev/null 2>&1 || true
+    if [ "$ENABLE_SELF_SIGNED_HTTPS" = "1" ]; then
+      run_as_root ufw allow 443/tcp >/dev/null 2>&1 || true
+    fi
   fi
   run_as_root systemctl enable nginx
   run_as_root systemctl restart nginx
@@ -404,6 +524,9 @@ main() {
 
   log "Installing Python dependencies"
   install_dependencies
+
+  log "Installing speech recognition backend"
+  install_whisper_cpp
 
   if [ "$INSTALL_MYSQL" = "1" ]; then
     log "Installing and initializing MySQL"

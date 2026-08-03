@@ -111,9 +111,15 @@ EOF
 run_ssh() {
   local command="$1"
   local remote_shell
+  local auth_args=()
   remote_shell="bash -lc $(printf '%q' "$command")"
 
+  if [ -n "$REMOTE_PASSWORD" ]; then
+    auth_args=(-o PubkeyAuthentication=no -o PreferredAuthentications=password)
+  fi
+
   run_expect ssh \
+    "${auth_args[@]}" \
     -o StrictHostKeyChecking=no \
     -p "$REMOTE_PORT" \
     "${REMOTE_USER}@${REMOTE_HOST}" \
@@ -123,8 +129,14 @@ run_ssh() {
 run_scp() {
   local src="$1"
   local dst="$2"
+  local auth_args=()
+
+  if [ -n "$REMOTE_PASSWORD" ]; then
+    auth_args=(-o PubkeyAuthentication=no -o PreferredAuthentications=password)
+  fi
 
   run_expect scp \
+    "${auth_args[@]}" \
     -o StrictHostKeyChecking=no \
     -P "$REMOTE_PORT" \
     "$src" \
@@ -194,13 +206,11 @@ main() {
     INSTALL_MYSQL
     INSTALL_NGINX
     NGINX_SERVER_NAME
+    SERVER_PUBLIC_IP
     DEEPSEEK_API_KEY
     DEEPSEEK_API_BASE
     DEEPSEEK_BASE_URL
     DEEPSEEK_MODEL
-    MINIMAX_API_KEY
-    MINIMAX_API_BASE
-    MINIMAX_MODEL
     LLM_API_KEY
     LLM_API_BASE
     LLM_MODEL
@@ -208,12 +218,24 @@ main() {
     OPENAI_BASE_URL
     OPENAI_API_BASE
     OPENAI_MODEL
+    ASSISTANT_CHAT_MODELS
     SCREENING_MAX_WORKERS
     SCREENING_SUBMIT_BATCH
     SCREENING_SAVE_INTERVAL
     STOCK_INFO_TTL
     KLINE_TTL
     SEARCH_TTL
+    ASSISTANT_ASR_BACKEND
+    ASSISTANT_ASR_LANGUAGE
+    ASSISTANT_ASR_THREADS
+    ASSISTANT_ASR_TIMEOUT
+    ASSISTANT_ASR_MAX_BYTES
+    ENABLE_SELF_SIGNED_HTTPS
+    WHISPER_CPP_DIR
+    WHISPER_CPP_BIN
+    WHISPER_CPP_MODEL
+    WHISPER_CPP_MODEL_NAME
+    FFMPEG_BIN
   )
   local env_name
   : >"$deploy_env_path"

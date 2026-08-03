@@ -216,15 +216,7 @@ def generate_strategy_code(prompt_text: str) -> str:
             "temperature": temperature,
             "stream": False,
         }
-        if provider == "minimax":
-            payload.update(
-                {
-                    "max_completion_tokens": 2048,
-                    "top_p": 0.9,
-                    "reasoning_split": True,
-                }
-            )
-        elif provider == "deepseek":
+        if provider == "deepseek":
             payload.update(
                 {
                     "max_tokens": 2048,
@@ -265,19 +257,6 @@ def generate_strategy_code(prompt_text: str) -> str:
                     if exc.response.status_code in {429, 529} and index < len(payloads) - 1:
                         sleep(1)
                         continue
-                    if provider == "minimax" and exc.response.status_code == 400 and payload.get("reasoning_split"):
-                        retry_payload = dict(payload)
-                        retry_payload.pop("reasoning_split", None)
-                        response = client.post(
-                            f"{base_url}/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {api_key}",
-                                "Content-Type": "application/json",
-                            },
-                            json=retry_payload,
-                        )
-                        response.raise_for_status()
-                        return response.json()
                     if provider == "deepseek" and exc.response.status_code == 400 and payload.get("thinking"):
                         retry_payload = dict(payload)
                         retry_payload.pop("thinking", None)

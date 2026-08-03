@@ -169,6 +169,26 @@ def init_db(db_target):
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_assistant_messages (
+            id BIGINT PRIMARY KEY AUTO_INCREMENT,
+            session_id VARCHAR(64) NOT NULL,
+            intent VARCHAR(32) NOT NULL,
+            user_text TEXT NOT NULL,
+            assistant_text LONGTEXT,
+            action_type VARCHAR(64) DEFAULT '',
+            strategy_id BIGINT,
+            strategy_name VARCHAR(255) DEFAULT '',
+            task_id BIGINT,
+            run_token VARCHAR(64) DEFAULT '',
+            stock_code VARCHAR(32) DEFAULT '',
+            stock_name VARCHAR(255) DEFAULT '',
+            metadata_json LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
 
     ensure_column(c, "screening_results", "target_type", "VARCHAR(32)")
     ensure_column(c, "screening_results", "target_id", "BIGINT")
@@ -185,6 +205,14 @@ def init_db(db_target):
     ensure_column(c, "screening_runs", "failure_summary", "TEXT")
     ensure_column(c, "screening_runs", "miss_log_text", "LONGTEXT")
     ensure_column(c, "screening_runs", "miss_log_payload", "LONGTEXT")
+    ensure_column(c, "stock_assistant_messages", "action_type", "VARCHAR(64) DEFAULT ''")
+    ensure_column(c, "stock_assistant_messages", "strategy_id", "BIGINT")
+    ensure_column(c, "stock_assistant_messages", "strategy_name", "VARCHAR(255) DEFAULT ''")
+    ensure_column(c, "stock_assistant_messages", "task_id", "BIGINT")
+    ensure_column(c, "stock_assistant_messages", "run_token", "VARCHAR(64) DEFAULT ''")
+    ensure_column(c, "stock_assistant_messages", "stock_code", "VARCHAR(32) DEFAULT ''")
+    ensure_column(c, "stock_assistant_messages", "stock_name", "VARCHAR(255) DEFAULT ''")
+    ensure_column(c, "stock_assistant_messages", "metadata_json", "LONGTEXT")
 
     create_mysql_index(c, "screening_runs", "idx_screening_runs_target", "target_type, target_id, created_at")
     create_mysql_index(c, "screening_runs", "idx_screening_runs_run_token", "run_token")
@@ -197,6 +225,8 @@ def init_db(db_target):
     create_mysql_index(c, "task_jobs", "idx_task_jobs_type_queue_status_priority", "task_type, queue_name, status, priority, id")
     create_mysql_index(c, "task_jobs", "idx_task_jobs_type_recent", "task_type, id")
     create_mysql_index(c, "task_logs", "idx_task_logs_task_id", "task_id, id")
+    create_mysql_index(c, "stock_assistant_messages", "idx_stock_assistant_session", "session_id, id")
+    create_mysql_index(c, "stock_assistant_messages", "idx_stock_assistant_created", "created_at")
     c.execute("SELECT id FROM strategy_definitions WHERE name = ?", (DEFAULT_STRATEGY_NAME,))
     if not c.fetchone():
         c.execute(

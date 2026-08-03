@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import codecs
+import asyncio
 import json
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from db import compat as db
@@ -28,6 +29,18 @@ from app.services.strategy_service import (
     get_target_options,
     strategy_repository,
 )
+from app.services.assistant_service import (
+    clear_assistant_history,
+    get_assistant_model_options,
+    list_assistant_history,
+    process_assistant_message,
+)
+from app.services.asr_service import (
+    ASRTranscriptionError,
+    ASRUnavailableError,
+    get_asr_config,
+    transcribe_audio_bytes,
+)
 from app.config import has_database_config, settings
 
 
@@ -40,6 +53,11 @@ def _database_unavailable_response() -> JSONResponse:
         {"error": "数据库未配置，依赖数据库的功能暂不可用，请先设置 STOCK_AI_DB_URL"},
         status_code=503,
     )
+
+
+def _assistant_session_id(raw: object) -> str:
+    value = str(raw or "").strip()
+    return value[:64] if value else "default"
 
 
 def _task_list_item(task: dict) -> dict:
@@ -118,6 +136,57 @@ async def get_quote_bundle(request: Request, stock_code: str, period: str = "dai
     if bundle.get("error"):
         return JSONResponse({"error": bundle["error"]}, status_code=400)
     return bundle
+
+
+@router.post("/assistant/chat")
+async def assistant_chat_api(request: Request):
+    if not has_database_config():
+        return _database_unavailable_response()
+    payload = await request.json()
+    message = (payload.get("message") or "").strip()
+    session_id = _assistant_session_id(payload.get("session_id"))
+    model = (payload.get("model") or "").strip()
+    if not message:
+        return JSONResponse({"ok": False, "error": "请输入要咨询的内容"}, status_code=400)
+    return await process_assistant_message(message, session_id, request.app.state.market_http_client, model=model)
+
+
+@router.get("/assistant/model-options")
+async def assistant_model_options_api():
+    return get_assistant_model_options()
+
+
+@router.get("/assistant/history")
+async def assistant_history_api(session_id: Optional[str] = None, limit: int = 50):
+    if not has_database_config():
+        return _database_unavailable_response()
+    return {"history": list_assistant_history(session_id, limit=limit)}
+
+
+@router.delete("/assistant/history")
+async def clear_assistant_history_api(session_id: Optional[str] = None):
+    if not has_database_config():
+        return _database_unavailable_response()
+    return {"ok": True, "deleted": clear_assistant_history(session_id)}
+
+
+@router.get("/assistant/voice-config")
+async def assistant_voice_config_api():
+    return get_asr_config()
+
+
+@router.post("/assistant/transcribe")
+async def assistant_transcribe_api(file: UploadFile = File(...)):
+    try:
+        audio_bytes = await file.read(settings.assistant_asr_max_bytes + 1)
+        if len(audio_bytes) > settings.assistant_asr_max_bytes:
+            return JSONResponse({"ok": False, "error": "语音文件过大"}, status_code=413)
+        text = await asyncio.to_thread(transcribe_audio_bytes, audio_bytes, file.filename or "voice.webm")
+        return {"ok": True, "text": text}
+    except ASRUnavailableError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
+    except ASRTranscriptionError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.get("/strategy/contract")

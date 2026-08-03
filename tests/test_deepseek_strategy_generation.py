@@ -50,7 +50,7 @@ class DeepSeekStrategyGenerationTest(unittest.TestCase):
     def test_build_context_prefers_deepseek_over_existing_llm_keys(self):
         env = {
             "DEEPSEEK_API_KEY": "deepseek-key",
-            "MINIMAX_API_KEY": "minimax-key",
+            "LLM_API_KEY": "llm-key",
             "OPENAI_API_KEY": "openai-key",
         }
         with patch.dict(os.environ, env, clear=True):

@@ -2,11 +2,13 @@
 
 ## 1. 项目简介
 
-这是一个 A 股分析服务，包含 3 个主要页面：
+这是一个 A 股分析服务，默认进入股票助手，包含 4 个主要页面：
 
-- `/`：单只股票分析
+- `/`：股票助手
+- `/stock`：单只股票分析
 - `/screener`：策略选股
 - `/strategies`：策略管理
+- `/assistant`：股票助手，支持文字/语音输入、自动生成并运行选股策略、保存股票问答历史
 
 后端基于 FastAPI，当前结构已经按分层整理：
 
@@ -76,7 +78,10 @@ export STOCK_AI_DB_URL='mysql://user:password@127.0.0.1:3306/stock_ai?charset=ut
 - `STOCK_INFO_TTL`：股票信息缓存秒数
 - `KLINE_TTL`：K 线缓存秒数
 - `SEARCH_TTL`：搜索缓存秒数
-- `DEEPSEEK_API_KEY` / `MINIMAX_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`：策略生成/AI 总结使用；配置 DeepSeek 时默认使用 `https://api.deepseek.com` 和 `deepseek-v4-flash`
+- `DEEPSEEK_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`：策略生成/AI 总结使用；配置 DeepSeek 时默认使用 `https://api.deepseek.com` 和 `deepseek-v4-flash`
+- `ASSISTANT_CHAT_MODELS`：股票助手对话页可选模型列表，多个模型用英文逗号分隔；未配置时只显示当前默认模型
+- `ASSISTANT_ASR_BACKEND=whispercpp`：启用股票助手后端语音识别；需要 `WHISPER_CPP_BIN`、`WHISPER_CPP_MODEL` 和 `ffmpeg`
+- `ENABLE_SELF_SIGNED_HTTPS=1`：无域名时为远程部署生成自签名 HTTPS，便于浏览器授权麦克风录音
 
 ## 5. 功能说明
 
@@ -103,6 +108,13 @@ export STOCK_AI_DB_URL='mysql://user:password@127.0.0.1:3306/stock_ai?charset=ut
 - 查看历史结果
 - 每日定时选股、清理旧数据、同步行情缓存
 
+### 股票助手
+
+- 股票助手会先用大模型识别意图：概念解释、相关股票、策略全量、市场咨询、其他咨询
+- 只有识别为策略全量执行时，才会调用大模型生成策略代码，保存为新策略，并自动加入选股任务队列
+- 股票咨询会结合会话上下文、行情、技术指标或主题候选生成回答，并把问答保存到历史记录
+- 语音输入默认使用浏览器内置语音识别能力；部署 `whisper.cpp` 后会优先录音上传到后端识别，识别完成后自动提交
+
 ## 6. 常用接口
 
 - `GET /api/stock/{stock_code}`
@@ -111,6 +123,8 @@ export STOCK_AI_DB_URL='mysql://user:password@127.0.0.1:3306/stock_ai?charset=ut
 - `GET /api/analyze/{stock_code}`
 - `GET /api/search?q=关键词`
 - `GET /api/quote/{stock_code}`
+- `POST /api/assistant/chat`
+- `GET /api/assistant/history`
 - `GET /api/strategies`
 - `POST /api/strategies`
 - `PUT /api/strategies/{strategy_id}`

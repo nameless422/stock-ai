@@ -36,7 +36,7 @@
 
         .toolbar {
             display: grid;
-            grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto auto;
+            grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto auto auto;
             gap: var(--sp-3);
             align-items: center;
         }
@@ -1200,7 +1200,7 @@
             </div>
             <div class="hero-desc">
                 按单个策略或策略组跑全市场扫描，查看每次运行的命中结果与原因。策略可在
-                <a href="/strategies">策略管理</a> 里维护。
+                <a href="/strategies">策略管理</a> 里维护，也可以从 <a href="/assistant">股票助手</a> 直接生成并运行。
             </div>
         </header>
 
@@ -1294,6 +1294,7 @@
                             <span x-text="status && status.running ? '运行中' : '开始扫描'"></span>
                         </button>
                         <a class="btn btn-ghost md-only" href="/strategies">管理策略</a>
+                        <a class="btn btn-ghost md-only" href="/assistant">股票助手</a>
                     </div>
                 </div>
             </div>
@@ -1791,10 +1792,11 @@
 
         <!-- 底部导航 -->
         <footer class="nav-links" style="margin-top: var(--sp-5); justify-content: center;">
-            <a href="/">股票分析</a>
+            <a href="/stock">股票分析</a>
             <span>·</span>
             <a href="/strategies">策略管理</a>
             <span>·</span>
+            <a href="/assistant">股票助手</a>
         </footer>
 
         <!-- ========== 详情抽屉 ========== -->
@@ -2283,8 +2285,8 @@
                 },
                 lastStockUrl() {
                     const stock = this.workspace.stock;
-                    if (!stock || !stock.code) return '/';
-                    return `/?code=${encodeURIComponent(stock.code)}`;
+                    if (!stock || !stock.code) return '/stock';
+                    return `/stock?code=${encodeURIComponent(stock.code)}`;
                 },
                 async loadTargets() {
                     try {
@@ -2765,7 +2767,7 @@
                     if (this.targetId) params.set('back_target_id', String(this.targetId));
                     const name = this.currentTargetName() || this.guide.targetName;
                     if (name) params.set('back_target_name', name);
-                    return `/?${params.toString()}`;
+                    return `/stock?${params.toString()}`;
                 },
                 downloadMissLog(item) {
                     if (!this.canDownloadMissLog(item)) return;
